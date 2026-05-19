@@ -1,9 +1,15 @@
 import type { Asset, Brief, GeneratedImage, Suggestion } from '../types';
+import { getStoredKey } from './apiKey';
+
+function authHeaders(): Record<string, string> {
+  const key = getStoredKey();
+  return key ? { 'x-gemini-key': key } : {};
+}
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -72,7 +78,7 @@ export interface VideoJobStatus {
 }
 
 export async function getVideoJob(jobId: string): Promise<VideoJobStatus> {
-  const res = await fetch(`/api/video/${jobId}`);
+  const res = await fetch(`/api/video/${jobId}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`Status ${res.status}`);
   return (await res.json()) as VideoJobStatus;
 }

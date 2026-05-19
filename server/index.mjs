@@ -8,20 +8,37 @@ import { randomUUID } from 'node:crypto';
 import { GoogleGenAI } from '@google/genai';
 import { isOneDriveConfigured, uploadToSharePoint } from './onedrive.mjs';
 
-const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey) {
-  console.error('[server] GEMINI_API_KEY missing. Copy .env.example to .env and add your key.');
-  process.exit(1);
-}
+// The API key now comes from the browser on each request (x-gemini-key header).
+// A server-side GEMINI_API_KEY in .env is honored as a fallback for shared
+// deployments where the host wants to pre-configure the key.
+const fallbackApiKey = process.env.GEMINI_API_KEY || '';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(__dirname, '..', 'dist');
 
-const ai = new GoogleGenAI({ apiKey });
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
 const log = (...a) => console.log('[server]', ...a);
+
+function getKey(req) {
+  return req.get('x-gemini-key') || fallbackApiKey;
+}
+
+function clientFor(req) {
+  const key = getKey(req);
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
+}
+
+function requireClient(req, res) {
+  const ai = clientFor(req);
+  if (!ai) {
+    res.status(401).json({ error: 'Missing API key. Open the app and paste your Gemini key.' });
+    return null;
+  }
+  return ai;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -70,6 +87,8 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
  * to mix-and-match before generating.
  */
 app.post('/api/suggest', async (req, res) => {
+  const ai = requireClient(req, res);
+  if (!ai) return;
   try {
     const { brief = {}, hasAssets = {} } = req.body || {};
 
@@ -134,6 +153,8 @@ Aim for 10-14 items, varied, concrete and actionable. No duplicates. No prefixes
  * Returns: { images: [{ dataUrl, mimeType, model }] }
  */
 app.post('/api/generate', async (req, res) => {
+  const ai = requireClient(req, res);
+  if (!ai) return;
   try {
     const {
       prompt,
@@ -253,10 +274,11 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000).unref();
 
-async function runVideoJob(jobId, { prompt, imageDataUrl, model, filenameHint }) {
+async function runVideoJob(jobId, { prompt, imageDataUrl, model, filenameHint, apiKey }) {
   const job = videoJobs.get(jobId);
   if (!job) return;
   try {
+    const ai = new GoogleGenAI({ apiKey });
     const veoModel = model === 'veo-2' ? 'veo-2.0-generate-001' : 'veo-3.0-generate-preview';
     const request = {
       model: veoModel,
@@ -322,6 +344,10 @@ async function runVideoJob(jobId, { prompt, imageDataUrl, model, filenameHint })
  * Returns: { jobId }
  */
 app.post('/api/video', (req, res) => {
+  const apiKey = getKey(req);
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Missing API key. Open the app and paste your Gemini key.' });
+  }
   const { prompt, imageDataUrl, model = 'veo-3', filenameHint } = req.body || {};
   if (!prompt && !imageDataUrl) {
     return res.status(400).json({ error: 'prompt or imageDataUrl required' });
@@ -329,7 +355,7 @@ app.post('/api/video', (req, res) => {
   const jobId = randomUUID();
   videoJobs.set(jobId, { status: 'pending', createdAt: Date.now(), prompt });
   // Fire-and-forget; client polls.
-  runVideoJob(jobId, { prompt, imageDataUrl, model, filenameHint });
+  runVideoJob(jobId, { prompt, imageDataUrl, model, filenameHint, apiKey });
   res.json({ jobId });
 });
 
@@ -361,6 +387,7 @@ app.get('/api/video/:jobId/file', (req, res) => {
 app.get('/api/config', (_req, res) => {
   res.json({
     sharepoint: isOneDriveConfigured(),
+    serverHasKey: !!fallbackApiKey,
   });
 });
 
@@ -381,4 +408,11 @@ if (fs.existsSync(distDir)) {
 // ── Boot ───────────────────────────────────────────────────────────────────
 
 const port = Number(process.env.PORT) || 8787;
-app.listen(port, '0.0.0.0', () => log(`listening on http://0.0.0.0:${port}`));
+app.listen(port, '0.0.0.0', () => {
+  log(`listening on http://0.0.0.0:${port}`);
+  if (fallbackApiKey) {
+    log('GEMINI_API_KEY found in env — using as fallback when the browser does not send one.');
+  } else {
+    log('No GEMINI_API_KEY in env — users will be prompted to paste their key in the browser.');
+  }
+});

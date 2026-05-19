@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Wand2, Loader2, AlertCircle } from 'lucide-react';
+import { Wand2, Loader2, AlertCircle, KeyRound } from 'lucide-react';
 import type {
   Asset,
   Brief as BriefT,
@@ -12,8 +12,11 @@ import Brief from './components/Brief';
 import OutputSpec from './components/OutputSpec';
 import Suggestions from './components/Suggestions';
 import ResultsGrid from './components/ResultsGrid';
+import Splash from './components/Splash';
+import ApiKeyModal from './components/ApiKeyModal';
 import { fetchSuggestions, generateImage, generateVideo } from './lib/api';
 import { buildPrompt } from './lib/prompt';
+import { getStoredKey, onKeyChange } from './lib/apiKey';
 
 const initialBrief: BriefT = {
   theme: '',
@@ -33,6 +36,19 @@ const initialSpec: SpecT = {
 };
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [hasKey, setHasKey] = useState(() => !!getStoredKey());
+  const [keyModalOpen, setKeyModalOpen] = useState(false);
+
+  useEffect(() => {
+    return onKeyChange((k) => setHasKey(!!k));
+  }, []);
+
+  // Open the key modal as soon as the splash finishes, if no key is stored.
+  useEffect(() => {
+    if (!showSplash && !hasKey) setKeyModalOpen(true);
+  }, [showSplash, hasKey]);
+
   const [assets, setAssets] = useState<Asset[]>([]);
   const [brief, setBrief] = useState<BriefT>(initialBrief);
   const [spec, setSpec] = useState<SpecT>(initialSpec);
@@ -195,6 +211,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
+      {showSplash && <Splash onDone={() => setShowSplash(false)} />}
+      <ApiKeyModal
+        open={keyModalOpen}
+        canClose={hasKey}
+        onClose={() => setKeyModalOpen(false)}
+      />
+
       <header className="sticky top-0 z-30 backdrop-blur-md bg-ink-950/70 border-b border-white/5">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -210,9 +233,19 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 text-xs text-ink-300">
-            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" /> Gemini connected
-          </div>
+          <button
+            onClick={() => setKeyModalOpen(true)}
+            className="flex items-center gap-2 text-xs text-ink-300 hover:text-white transition rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5"
+            title={hasKey ? 'Change API key' : 'Add your API key'}
+          >
+            <span
+              className={`inline-flex h-2 w-2 rounded-full ${hasKey ? 'bg-emerald-400' : 'bg-amber-400'}`}
+            />
+            <KeyRound size={12} />
+            <span className="hidden sm:inline">
+              {hasKey ? 'Gemini connected' : 'Add API key'}
+            </span>
+          </button>
         </div>
       </header>
 
