@@ -60,12 +60,22 @@ export default function ResultsGrid({ images, loadingCount, onRegenerate, onMake
               <X size={16} />
             </button>
             <video
-              src={videoOpen.video.dataUrl}
+              src={videoOpen.video.url}
               controls
               autoPlay
               loop
               className="max-h-[90vh] max-w-[92vw]"
             />
+            {videoOpen.video.sharepoint?.webUrl && (
+              <a
+                href={videoOpen.video.sharepoint.webUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-md bg-black/70 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-black/85"
+              >
+                Open in SharePoint ↗
+              </a>
+            )}
           </div>
         </div>
       )}

@@ -1,9 +1,12 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { GoogleGenAI } from '@google/genai';
+import { isOneDriveConfigured, uploadToSharePoint } from './onedrive.mjs';
 
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
@@ -228,67 +231,137 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-/**
- * POST /api/video
- * Body: { prompt: string, imageDataUrl?: string, model?: "veo-3"|"veo-2" }
- * Veo is long-running; we poll until done then return the video as a data URL.
- */
-app.post('/api/video', async (req, res) => {
-  try {
-    const { prompt, imageDataUrl, model = 'veo-3' } = req.body || {};
-    if (!prompt && !imageDataUrl) {
-      return res.status(400).json({ error: 'prompt or imageDataUrl required' });
+// ── Video jobs (async pattern — survives App Service timeouts) ────────────
+// Veo can take 1-4 minutes, longer than App Service's 230s request limit.
+// /api/video starts a background job and returns a jobId; the client polls
+// /api/video/:jobId, and downloads bytes from /api/video/:jobId/file once done.
+
+const videoDir = path.join(os.tmpdir(), 'playtika-art-studio-videos');
+fs.mkdirSync(videoDir, { recursive: true });
+
+/** @type {Map<string, { status: string, error?: string, mp4Path?: string, model?: string, sharepoint?: any, prompt?: string, createdAt: number }>} */
+const videoJobs = new Map();
+
+// Cleanup jobs older than 2h.
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of videoJobs) {
+    if (now - job.createdAt > 2 * 60 * 60 * 1000) {
+      if (job.mp4Path) fs.rm(job.mp4Path, { force: true }, () => {});
+      videoJobs.delete(id);
     }
+  }
+}, 10 * 60 * 1000).unref();
 
-    const veoModel =
-      model === 'veo-2' ? 'veo-2.0-generate-001' : 'veo-3.0-generate-preview';
-
+async function runVideoJob(jobId, { prompt, imageDataUrl, model, filenameHint }) {
+  const job = videoJobs.get(jobId);
+  if (!job) return;
+  try {
+    const veoModel = model === 'veo-2' ? 'veo-2.0-generate-001' : 'veo-3.0-generate-preview';
     const request = {
       model: veoModel,
       prompt: prompt || 'Cinematic animation, subtle parallax, marketing-ready 5s loop.',
       config: { numberOfVideos: 1 },
     };
-
     if (imageDataUrl) {
       const inline = dataUrlToInline(imageDataUrl);
-      if (inline) {
-        request.image = { imageBytes: inline.data, mimeType: inline.mimeType };
-      }
+      if (inline) request.image = { imageBytes: inline.data, mimeType: inline.mimeType };
     }
 
     let op = await ai.models.generateVideos(request);
     const started = Date.now();
-    const timeoutMs = 4 * 60 * 1000;
-
+    const timeoutMs = 6 * 60 * 1000;
     while (!op.done) {
-      if (Date.now() - started > timeoutMs) {
-        return res.status(504).json({ error: 'Video generation timed out (4 min).' });
-      }
+      if (Date.now() - started > timeoutMs) throw new Error('Veo timed out after 6 minutes.');
       await new Promise((r) => setTimeout(r, 5000));
       op = await ai.operations.getVideosOperation({ operation: op });
     }
-
     const videos = op.response?.generatedVideos || [];
-    if (!videos.length) {
-      return res.status(502).json({ error: 'Veo returned no video.' });
-    }
-
-    // The SDK returns a file reference; we fetch its bytes and pass back as data URL.
-    const v = videos[0];
-    const fileUri = v.video?.uri;
-    if (!fileUri) return res.status(502).json({ error: 'Missing video uri' });
+    if (!videos.length) throw new Error('Veo returned no video.');
+    const fileUri = videos[0].video?.uri;
+    if (!fileUri) throw new Error('Veo response missing video uri.');
 
     const fetchRes = await fetch(`${fileUri}&key=${apiKey}`);
-    if (!fetchRes.ok) {
-      return res.status(502).json({ error: `Veo download failed: ${fetchRes.status}` });
-    }
+    if (!fetchRes.ok) throw new Error(`Veo download failed: ${fetchRes.status}`);
     const buf = Buffer.from(await fetchRes.arrayBuffer());
-    const dataUrl = `data:video/mp4;base64,${buf.toString('base64')}`;
-    res.json({ video: { dataUrl, model: veoModel } });
+
+    const safeHint = (filenameHint || 'creative')
+      .replace(/[^a-z0-9-_]+/gi, '-')
+      .slice(0, 40);
+    const filename = `playtika-${safeHint}-${jobId.slice(0, 6)}.mp4`;
+    const mp4Path = path.join(videoDir, filename);
+    fs.writeFileSync(mp4Path, buf);
+
+    let sharepoint = null;
+    if (isOneDriveConfigured()) {
+      try {
+        sharepoint = await uploadToSharePoint(buf, filename, 'video/mp4');
+        log(`video ${jobId} uploaded to SharePoint: ${sharepoint?.webUrl}`);
+      } catch (e) {
+        log(`SharePoint upload failed for ${jobId}:`, e?.message);
+      }
+    }
+
+    videoJobs.set(jobId, {
+      ...job,
+      status: 'done',
+      mp4Path,
+      filename,
+      model: veoModel,
+      sharepoint,
+    });
   } catch (err) {
-    log('video error', err?.message);
-    res.status(500).json({ error: err?.message || 'video failed' });
+    log(`video job ${jobId} error:`, err?.message);
+    videoJobs.set(jobId, { ...job, status: 'error', error: err?.message || 'video failed' });
   }
+}
+
+/**
+ * POST /api/video — start a video job.
+ * Body: { prompt, imageDataUrl?, model?, filenameHint? }
+ * Returns: { jobId }
+ */
+app.post('/api/video', (req, res) => {
+  const { prompt, imageDataUrl, model = 'veo-3', filenameHint } = req.body || {};
+  if (!prompt && !imageDataUrl) {
+    return res.status(400).json({ error: 'prompt or imageDataUrl required' });
+  }
+  const jobId = randomUUID();
+  videoJobs.set(jobId, { status: 'pending', createdAt: Date.now(), prompt });
+  // Fire-and-forget; client polls.
+  runVideoJob(jobId, { prompt, imageDataUrl, model, filenameHint });
+  res.json({ jobId });
+});
+
+/** GET /api/video/:jobId — poll status. */
+app.get('/api/video/:jobId', (req, res) => {
+  const job = videoJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'unknown job' });
+  if (job.status === 'done') {
+    return res.json({
+      status: 'done',
+      model: job.model,
+      url: `/api/video/${req.params.jobId}/file`,
+      sharepoint: job.sharepoint || null,
+    });
+  }
+  if (job.status === 'error') return res.json({ status: 'error', error: job.error });
+  res.json({ status: 'pending' });
+});
+
+/** GET /api/video/:jobId/file — stream the MP4. */
+app.get('/api/video/:jobId/file', (req, res) => {
+  const job = videoJobs.get(req.params.jobId);
+  if (!job || !job.mp4Path) return res.status(404).end();
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Disposition', `inline; filename="${job.filename || 'video.mp4'}"`);
+  fs.createReadStream(job.mp4Path).pipe(res);
+});
+
+app.get('/api/config', (_req, res) => {
+  res.json({
+    sharepoint: isOneDriveConfigured(),
+  });
 });
 
 // ── Static frontend (production single-port mode) ─────────────────────────

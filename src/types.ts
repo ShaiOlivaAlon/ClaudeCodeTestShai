@@ -31,6 +31,18 @@ export interface Suggestion {
   label: string;
 }
 
+export interface VideoSharePoint {
+  webUrl: string;
+  downloadUrl?: string;
+  id?: string;
+}
+
+export interface VideoResult {
+  url: string; // backend-served MP4 URL
+  model: string;
+  sharepoint?: VideoSharePoint | null;
+}
+
 export interface GeneratedImage {
   id: string;
   dataUrl: string;
@@ -39,7 +51,8 @@ export interface GeneratedImage {
   aspect: string;
   prompt: string;
   createdAt: number;
-  video?: { dataUrl: string; model: string };
+  video?: VideoResult;
+  videoJobId?: string;
   videoLoading?: boolean;
   videoError?: string;
 }

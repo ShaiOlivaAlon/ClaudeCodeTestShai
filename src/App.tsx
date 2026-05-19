@@ -159,13 +159,30 @@ export default function App() {
       prev.map((img) => (img.id === id ? { ...img, videoLoading: true, videoError: undefined } : img))
     );
     try {
-      const v = await generateVideo({
-        prompt: `Animate this marketing creative subtly: gentle camera move, sparkles and light play, looping 5 seconds. ${target.prompt.slice(0, 400)}`,
-        imageDataUrl: target.dataUrl,
-        model: spec.videoModel,
-      });
+      const v = await generateVideo(
+        {
+          prompt: `Animate this marketing creative subtly: gentle camera move, sparkles and light play, looping 5 seconds. ${target.prompt.slice(0, 400)}`,
+          imageDataUrl: target.dataUrl,
+          model: spec.videoModel,
+          filenameHint: target.aspect.replace(':', 'x'),
+        },
+        {
+          onJobId: (jobId) =>
+            setImages((prev) =>
+              prev.map((img) => (img.id === id ? { ...img, videoJobId: jobId } : img))
+            ),
+        }
+      );
       setImages((prev) =>
-        prev.map((img) => (img.id === id ? { ...img, video: v, videoLoading: false } : img))
+        prev.map((img) =>
+          img.id === id
+            ? {
+                ...img,
+                video: { url: v.url, model: v.model, sharepoint: v.sharepoint || undefined },
+                videoLoading: false,
+              }
+            : img
+        )
       );
     } catch (e) {
       setImages((prev) =>

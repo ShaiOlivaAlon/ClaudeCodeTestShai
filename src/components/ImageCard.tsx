@@ -1,4 +1,4 @@
-import { Download, Film, Repeat, Loader2, AlertCircle, Play } from 'lucide-react';
+import { Download, Film, Repeat, Loader2, AlertCircle, Play, ExternalLink } from 'lucide-react';
 import type { GeneratedImage } from '../types';
 import { downloadDataUrl } from '../lib/files';
 
@@ -58,7 +58,10 @@ export default function ImageCard({ image, onRegenerate, onMakeVideo, onOpenVide
           <button
             className="btn-icon"
             onClick={() =>
-              downloadDataUrl(image.dataUrl, `playtika-${image.aspect.replace(':', 'x')}-${image.id.slice(0, 6)}.png`)
+              downloadDataUrl(
+                image.dataUrl,
+                `playtika-${image.aspect.replace(':', 'x')}-${image.id.slice(0, 6)}.png`
+              )
             }
             title="Download image"
           >
@@ -81,9 +84,30 @@ export default function ImageCard({ image, onRegenerate, onMakeVideo, onOpenVide
             <AlertCircle size={12} /> Video failed
           </span>
         ) : image.video ? (
-          <button className="btn-icon" onClick={onOpenVideo} title="Open video">
-            <Film size={14} />
-          </button>
+          <div className="flex items-center gap-1">
+            {image.video.sharepoint?.webUrl && (
+              <a
+                href={image.video.sharepoint.webUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-icon"
+                title="Open in SharePoint"
+              >
+                <ExternalLink size={14} />
+              </a>
+            )}
+            <a
+              href={image.video.url}
+              download={`playtika-${image.aspect.replace(':', 'x')}-${image.id.slice(0, 6)}.mp4`}
+              className="btn-icon"
+              title="Download video"
+            >
+              <Download size={14} />
+            </a>
+            <button className="btn-icon" onClick={onOpenVideo} title="Play video">
+              <Film size={14} />
+            </button>
+          </div>
         ) : (
           <button
             className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-electric-500/15 text-electric-400 border border-electric-500/30 hover:bg-electric-500/25 transition"

@@ -54,14 +54,51 @@ export async function generateImage(params: {
   }));
 }
 
-export async function generateVideo(params: {
+export async function startVideoJob(params: {
   prompt: string;
   imageDataUrl?: string;
   model: 'veo-3' | 'veo-2';
-}): Promise<{ dataUrl: string; model: string }> {
-  const data = await postJSON<{ video: { dataUrl: string; model: string } }>(
-    '/api/video',
-    params
-  );
-  return data.video;
+  filenameHint?: string;
+}): Promise<{ jobId: string }> {
+  return await postJSON<{ jobId: string }>('/api/video', params);
+}
+
+export interface VideoJobStatus {
+  status: 'pending' | 'done' | 'error';
+  error?: string;
+  url?: string;
+  model?: string;
+  sharepoint?: { webUrl: string; downloadUrl?: string; id?: string } | null;
+}
+
+export async function getVideoJob(jobId: string): Promise<VideoJobStatus> {
+  const res = await fetch(`/api/video/${jobId}`);
+  if (!res.ok) throw new Error(`Status ${res.status}`);
+  return (await res.json()) as VideoJobStatus;
+}
+
+export async function generateVideo(
+  params: {
+    prompt: string;
+    imageDataUrl?: string;
+    model: 'veo-3' | 'veo-2';
+    filenameHint?: string;
+  },
+  opts: { onJobId?: (jobId: string) => void; intervalMs?: number } = {}
+): Promise<{ url: string; model: string; sharepoint?: VideoJobStatus['sharepoint'] }> {
+  const { jobId } = await startVideoJob(params);
+  opts.onJobId?.(jobId);
+  const interval = opts.intervalMs ?? 5000;
+
+  // Poll until done or error. No hard deadline here — the server caps Veo at 6 min.
+  while (true) {
+    await new Promise((r) => setTimeout(r, interval));
+    const s = await getVideoJob(jobId);
+    if (s.status === 'done') {
+      return { url: s.url!, model: s.model!, sharepoint: s.sharepoint };
+    }
+    if (s.status === 'error') {
+      throw new Error(s.error || 'Video generation failed');
+    }
+  }
 }
