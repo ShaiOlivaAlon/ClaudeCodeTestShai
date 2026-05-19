@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #f8f7ff;
+    min-height: 100dvh;
+    overscroll-behavior: none;
+  }
+
+  #root {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-white/60;
+  }
+
+  .btn-primary {
+    @apply bg-primary-500 hover:bg-primary-600 active:bg-primary-700 text-white font-semibold
+           py-3 px-6 rounded-2xl transition-all duration-150 active:scale-95 select-none;
+  }
+
+  .btn-secondary {
+    @apply bg-primary-50 hover:bg-primary-100 active:bg-primary-200 text-primary-700 font-semibold
+           py-3 px-6 rounded-2xl transition-all duration-150 active:scale-95 select-none;
+  }
+
+  .btn-danger {
+    @apply bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 font-semibold
+           py-2 px-4 rounded-xl transition-all duration-150 active:scale-95 select-none;
+  }
+
+  .input-field {
+    @apply w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900
+           focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent
+           transition-all duration-150;
+  }
+}
+
+/* Remove default input styling on mobile */
+input[type="datetime-local"],
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Prevent zoom on input focus (iOS) */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(40%) sepia(100%) saturate(500%) hue-rotate(200deg);
+  cursor: pointer;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c7d2fe;
+  border-radius: 2px;
+}
+
+/* Sleep animation */
+@keyframes sleepPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 20px rgba(99, 102, 241, 0);
+  }
+}
+
+.sleep-pulse {
+  animation: sleepPulse 2.5s ease-in-out infinite;
+}
+
+/* Safe area insets */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
