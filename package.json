@@ -9,7 +9,7 @@
     "dev:web": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "start": "node server/index.mjs"
+    "start": "npm run build && PORT=${PORT:-3000} node server/index.mjs"
   },
   "dependencies": {
     "@google/genai": "^0.7.0",

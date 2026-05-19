@@ -1,5 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import { GoogleGenAI } from '@google/genai';
 
 const apiKey = process.env.GEMINI_API_KEY;
@@ -7,6 +10,9 @@ if (!apiKey) {
   console.error('[server] GEMINI_API_KEY missing. Copy .env.example to .env and add your key.');
   process.exit(1);
 }
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distDir = path.resolve(__dirname, '..', 'dist');
 
 const ai = new GoogleGenAI({ apiKey });
 const app = express();
@@ -285,7 +291,21 @@ app.post('/api/video', async (req, res) => {
   }
 });
 
+// ── Static frontend (production single-port mode) ─────────────────────────
+// When `dist/` exists (after `npm run build`) we serve the built React app
+// from the same Express server, so only one port needs to be exposed.
+
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir, { index: false }));
+  app.get(/^(?!\/api\/).*/, (_req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+  log(`serving static frontend from ${distDir}`);
+} else {
+  log('no dist/ folder yet — run "npm run build" to enable single-port serve.');
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────────
 
 const port = Number(process.env.PORT) || 8787;
-app.listen(port, () => log(`listening on http://localhost:${port}`));
+app.listen(port, '0.0.0.0', () => log(`listening on http://0.0.0.0:${port}`));
