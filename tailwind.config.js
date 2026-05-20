@@ -7,40 +7,59 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#eef2ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
-          800: '#3730a3',
-          900: '#312e81',
+        ink: {
+          950: '#07070d',
+          900: '#0b0b14',
+          850: '#11111c',
+          800: '#161624',
+          700: '#1d1d2e',
+          600: '#262638',
+          500: '#3a3a52',
+          400: '#5a5a78',
+          300: '#8a8aaa',
+          200: '#b8b8d0',
+          100: '#e4e4ef',
         },
-        app: {
-          bg: '#f8f7ff',
-          card: '#ffffff',
-          sleep: '#6366f1',
-          wake: '#f59e0b',
-          night: '#312e81',
-          nap: '#818cf8',
-        }
+        brand: {
+          50:  '#f3edff',
+          100: '#e3d3ff',
+          200: '#c9aaff',
+          300: '#a875ff',
+          400: '#8b4dff',
+          500: '#7029ff',
+          600: '#5d15e8',
+          700: '#4a0dbc',
+          800: '#380a8e',
+          900: '#260766',
+        },
+        accent: {
+          400: '#ff6ec7',
+          500: '#ff3aa8',
+          600: '#e21f8e',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['"Space Grotesk"', 'Inter', 'system-ui', 'sans-serif'],
+      },
+      boxShadow: {
+        glow: '0 0 0 1px rgba(168,117,255,0.35), 0 8px 30px rgba(112,41,255,0.35)',
+        soft: '0 8px 24px rgba(0,0,0,0.35)',
+      },
+      backgroundImage: {
+        'brand-gradient': 'linear-gradient(135deg,#7029ff 0%,#ff3aa8 100%)',
+        'panel-gradient': 'linear-gradient(180deg,rgba(255,255,255,0.04) 0%,rgba(255,255,255,0) 100%)',
       },
       animation: {
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'breath': 'breath 4s ease-in-out infinite',
+        'pulse-slow': 'pulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'shimmer': 'shimmer 2s linear infinite',
       },
       keyframes: {
-        breath: {
-          '0%, 100%': { transform: 'scale(1)', opacity: '0.8' },
-          '50%': { transform: 'scale(1.08)', opacity: '1' },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
         }
-      }
+      },
     },
   },
   plugins: [],

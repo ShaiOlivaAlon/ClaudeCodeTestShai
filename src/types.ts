@@ -1,49 +1,81 @@
-export interface SleepEntry {
+export type AssetCategory = 'character' | 'item' | 'logo' | 'reference';
+
+export interface Asset {
   id: string;
-  startTime: string; // ISO string
-  endTime: string | null; // null = currently sleeping
-  type: 'night' | 'nap' | 'manual';
-  notes?: string;
+  category: AssetCategory;
+  name: string;
+  dataUrl: string;
+  width: number;
+  height: number;
+  createdAt: number;
 }
 
-export interface AppSettings {
-  babyName: string;
-  babyBirthdate: string; // ISO date string (YYYY-MM-DD)
-  notificationsEnabled: boolean;
-  alerts: {
-    wakeWindow: boolean;
-    bedtime: boolean;
-    longNap: boolean;
-  };
+export type AspectRatio =
+  | '1:1' | '9:16' | '16:9' | '4:5' | '5:4' | '3:4' | '4:3' | '2:3' | '3:2';
+
+export interface Brief {
+  selectedAssetIds: string[];
+  aspectRatios: AspectRatio[];
+  seasons: string[];
+  themes: string[];
+  styles: string[];
+  features: string[];
+  textExamples: string[];
+  titles: string[];
+  notes: string;
+  variationCount: number;
+  textModel: string;
+  imageModel: string;
+  videoModel: string;
 }
 
-export interface DailySummary {
-  totalSleepMs: number;
-  napCount: number;
-  longestStretchMs: number;
-  nightSleepMs: number;
-  napSleepMs: number;
+export interface Suggestion {
+  id: string;
+  title: string;
+  description: string;
+  prompt: string;
+  tags: string[];
+  selected: boolean;
 }
 
-export interface NextSleepSuggestion {
-  suggestedTime: Date;
-  label: string;
-  minutesUntil: number;
-  wakeWindowMinutes: number;
-  urgency: 'soon' | 'now' | 'overdue' | 'waiting';
+export type GenerationStatus = 'queued' | 'generating' | 'done' | 'error';
+
+export interface VideoGeneration {
+  status: GenerationStatus;
+  url?: string;
+  model: string;
+  prompt: string;
+  error?: string;
 }
 
-export type TabName = 'dashboard' | 'history' | 'charts' | 'settings';
+export interface Generation {
+  id: string;
+  suggestionId?: string;
+  title: string;
+  prompt: string;
+  enhancedPrompt: string;
+  imageUrl?: string;
+  aspectRatio: AspectRatio;
+  imageModel: string;
+  status: GenerationStatus;
+  error?: string;
+  createdAt: number;
+  video?: VideoGeneration;
+  /** Asset ids used as references for this generation. */
+  referenceAssetIds: string[];
+}
 
-export type AppAction =
-  | { type: 'START_SLEEP' }
-  | { type: 'STOP_SLEEP' }
-  | { type: 'ADD_ENTRY'; entry: SleepEntry }
-  | { type: 'UPDATE_ENTRY'; entry: SleepEntry }
-  | { type: 'DELETE_ENTRY'; id: string }
-  | { type: 'SET_ENTRIES'; entries: SleepEntry[] };
+export interface ApiKeys {
+  anthropic?: string;
+  openai?: string;
+  fal?: string;
+}
 
-export interface AppState {
-  entries: SleepEntry[];
-  settings: AppSettings;
+export interface Settings {
+  apiKeys: ApiKeys;
+  defaultTextModel: string;
+  defaultImageModel: string;
+  defaultVideoModel: string;
+  /** True once the user has completed the initial setup wizard. */
+  setupComplete: boolean;
 }
