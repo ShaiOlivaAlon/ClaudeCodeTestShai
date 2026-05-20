@@ -23,18 +23,21 @@ export const IMAGE_PROVIDERS: Provider[] = ['google', 'fal'];
 export const VIDEO_PROVIDERS: Provider[] = ['google', 'fal'];
 
 export const TEXT_MODELS: ModelDef[] = [
-  { id: 'gemini-2.5-pro',     name: 'Gemini 2.5 Pro',     provider: 'google',    description: 'Most capable Google model — deepest reasoning.' },
-  { id: 'gemini-2.5-flash',   name: 'Gemini 2.5 Flash',   provider: 'google',    description: 'Fast, balanced — recommended default.' },
-  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'google', description: 'Fastest, cheapest — quick brainstorms.' },
-  { id: 'claude-opus-4-7',    name: 'Claude Opus 4.7',    provider: 'anthropic', description: 'Most capable — deepest concept exploration.' },
-  { id: 'claude-sonnet-4-6',  name: 'Claude Sonnet 4.6',  provider: 'anthropic', description: 'Balanced speed and creativity.' },
-  { id: 'claude-haiku-4-5',   name: 'Claude Haiku 4.5',   provider: 'anthropic', description: 'Fastest Claude — quick brainstorming.' },
+  { id: 'gemini-3-pro-preview',  name: 'Gemini 3 Pro',          provider: 'google',    description: 'Newest Google flagship — strongest reasoning.' },
+  { id: 'gemini-2.5-pro',        name: 'Gemini 2.5 Pro',        provider: 'google',    description: 'Mature, deep reasoning.' },
+  { id: 'gemini-2.5-flash',      name: 'Gemini 2.5 Flash',      provider: 'google',    description: 'Fast, balanced — recommended default.' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'google',    description: 'Fastest, cheapest — quick brainstorms.' },
+  { id: 'claude-opus-4-7',       name: 'Claude Opus 4.7',       provider: 'anthropic', description: 'Most capable Claude.' },
+  { id: 'claude-sonnet-4-6',     name: 'Claude Sonnet 4.6',     provider: 'anthropic', description: 'Balanced Claude — speed + creativity.' },
+  { id: 'claude-haiku-4-5',      name: 'Claude Haiku 4.5',      provider: 'anthropic', description: 'Fastest Claude.' },
 ];
 
 export const IMAGE_MODELS: ModelDef[] = [
-  { id: 'imagen-4.0-generate-001',         name: 'Imagen 4',           provider: 'google', description: 'Google flagship — sharp, accurate.' },
+  { id: 'gemini-3-pro-image-preview',      name: 'Nano Banana 2 (Gemini 3 Pro Image)', provider: 'google', description: 'Google\'s newest image model — best prompt fidelity, takes refs.', supportsReference: true, supportsText: true },
+  { id: 'gemini-2.5-flash-image',          name: 'Nano Banana (Gemini 2.5 Flash Image)', provider: 'google', description: 'Fast multimodal image gen with reference support.', supportsReference: true, supportsText: true },
   { id: 'imagen-4.0-ultra-generate-001',   name: 'Imagen 4 Ultra',     provider: 'google', description: 'Highest quality Imagen, slower.' },
-  { id: 'imagen-4.0-fast-generate-001',    name: 'Imagen 4 Fast',      provider: 'google', description: 'Fast iteration on Google.' },
+  { id: 'imagen-4.0-generate-001',         name: 'Imagen 4',           provider: 'google', description: 'Google Imagen flagship — sharp, accurate.' },
+  { id: 'imagen-4.0-fast-generate-001',    name: 'Imagen 4 Fast',      provider: 'google', description: 'Faster Imagen for iteration.' },
   { id: 'fal-ai/flux-pro/v1.1-ultra',      name: 'FLUX 1.1 Pro Ultra', provider: 'fal',    description: 'Top-tier quality, slower.' },
   { id: 'fal-ai/flux-pro/v1.1',            name: 'FLUX 1.1 Pro',       provider: 'fal',    description: 'Sharp marketing-grade output.' },
   { id: 'fal-ai/flux/dev',                 name: 'FLUX Dev',           provider: 'fal',    description: 'Fast iterations.' },
@@ -45,7 +48,8 @@ export const IMAGE_MODELS: ModelDef[] = [
 ];
 
 export const VIDEO_MODELS: ModelDef[] = [
-  { id: 'veo-3.0-generate-001',                             name: 'Veo 3',               provider: 'google', description: 'Google latest — photoreal motion.' },
+  { id: 'veo-3.1-generate-preview',                         name: 'Veo 3.1',             provider: 'google', description: 'Newest Google video — enhanced motion + audio.' },
+  { id: 'veo-3.0-generate-001',                             name: 'Veo 3',               provider: 'google', description: 'Photoreal motion, native audio.' },
   { id: 'veo-3.0-fast-generate-001',                        name: 'Veo 3 Fast',          provider: 'google', description: 'Faster, slightly lower quality Veo 3.' },
   { id: 'veo-2.0-generate-001',                             name: 'Veo 2',               provider: 'google', description: 'Mature, broadly available Google video model.' },
   { id: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', name: 'Kling 2.5 Turbo Pro', provider: 'fal',    description: 'High-motion 5–10s clips.' },

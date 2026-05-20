@@ -161,6 +161,53 @@ async function imagenGenerate(opts: {
   return { url: `data:${mime};base64,${b64}` };
 }
 
+/** "Nano Banana" family — Gemini multimodal models that emit images via the
+ *  generateContent endpoint. Supports reference images as inline input. */
+async function geminiImageGenerate(opts: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+  referenceDataUrls?: string[];
+}): Promise<{ url: string }> {
+  const url = `${GOOGLE_BASE}/models/${opts.model}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
+  const parts: any[] = [];
+  if (opts.referenceDataUrls?.length) {
+    for (const dataUrl of opts.referenceDataUrls.slice(0, 3)) {
+      const { b64, mime } = await urlToBase64(dataUrl);
+      parts.push({ inlineData: { data: b64, mimeType: mime } });
+    }
+  }
+  const aspectHint = `\n\nRender the image in a ${opts.aspectRatio} aspect ratio.`;
+  parts.push({ text: opts.prompt + aspectHint });
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts }],
+      generationConfig: {
+        responseModalities: ['IMAGE'],
+        imageConfig: { aspectRatio: googleImageAspect(opts.aspectRatio) },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Gemini Image API error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  const candParts = data?.candidates?.[0]?.content?.parts ?? [];
+  for (const p of candParts) {
+    const inline = p?.inlineData ?? p?.inline_data;
+    if (inline?.data) {
+      const mime = inline.mimeType ?? inline.mime_type ?? 'image/png';
+      return { url: `data:${mime};base64,${inline.data}` };
+    }
+  }
+  throw new Error('Gemini Image returned no image bytes.');
+}
+
 async function veoGenerate(opts: {
   apiKey: string;
   model: string;
@@ -417,7 +464,18 @@ export async function generateImage(opts: ImageGenInput): Promise<{ url: string 
   }
 
   if (role.provider === 'google') {
-    return imagenGenerate({ apiKey: role.key, model: opts.model, prompt: opts.prompt, aspectRatio: opts.aspectRatio });
+    // gemini-*-image models use generateContent with image output (Nano Banana family);
+    // imagen-* models use the legacy :predict endpoint.
+    if (opts.model.startsWith('imagen-')) {
+      return imagenGenerate({ apiKey: role.key, model: opts.model, prompt: opts.prompt, aspectRatio: opts.aspectRatio });
+    }
+    return geminiImageGenerate({
+      apiKey: role.key,
+      model: opts.model,
+      prompt: opts.prompt,
+      aspectRatio: opts.aspectRatio,
+      referenceDataUrls: opts.referenceDataUrls,
+    });
   }
 
   let referenceUrls: string[] = [];

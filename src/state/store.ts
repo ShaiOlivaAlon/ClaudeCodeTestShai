@@ -60,8 +60,8 @@ export const defaultBrief: Brief = {
   notes: '',
   variationCount: 8,
   textModel: 'gemini-2.5-flash',
-  imageModel: 'imagen-4.0-generate-001',
-  videoModel: 'veo-3.0-fast-generate-001',
+  imageModel: 'gemini-3-pro-image-preview',
+  videoModel: 'veo-3.1-generate-preview',
 };
 
 export function reducer(state: AppState, action: AppAction): AppState {
@@ -159,8 +159,8 @@ export const initialState: AppState = {
   settings: {
     apiKeys: {},
     defaultTextModel: 'gemini-2.5-flash',
-    defaultImageModel: 'imagen-4.0-generate-001',
-    defaultVideoModel: 'veo-3.0-fast-generate-001',
+    defaultImageModel: 'gemini-3-pro-image-preview',
+    defaultVideoModel: 'veo-3.1-generate-preview',
     setupComplete: false,
   },
   assets: [],
