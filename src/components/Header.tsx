@@ -4,7 +4,7 @@ import { useStore } from '../state/store';
 export function Header() {
   const { state, dispatch } = useStore();
   const keys = state.settings.apiKeys;
-  const ready = Boolean(keys.anthropic && keys.fal);
+  const ready = Boolean(keys.text?.key && keys.image?.key && keys.video?.key);
 
   return (
     <header className="flex items-center justify-between border-b border-ink-800 bg-ink-950 px-5 py-3">

@@ -59,9 +59,9 @@ export const defaultBrief: Brief = {
   titles: [],
   notes: '',
   variationCount: 8,
-  textModel: 'claude-sonnet-4-6',
-  imageModel: 'fal-ai/flux-pro/v1.1',
-  videoModel: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+  textModel: 'gemini-2.5-flash',
+  imageModel: 'imagen-4.0-generate-001',
+  videoModel: 'veo-3.0-fast-generate-001',
 };
 
 export function reducer(state: AppState, action: AppAction): AppState {
@@ -158,9 +158,9 @@ export function reducer(state: AppState, action: AppAction): AppState {
 export const initialState: AppState = {
   settings: {
     apiKeys: {},
-    defaultTextModel: 'claude-sonnet-4-6',
-    defaultImageModel: 'fal-ai/flux-pro/v1.1',
-    defaultVideoModel: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+    defaultTextModel: 'gemini-2.5-flash',
+    defaultImageModel: 'imagen-4.0-generate-001',
+    defaultVideoModel: 'veo-3.0-fast-generate-001',
     setupComplete: false,
   },
   assets: [],

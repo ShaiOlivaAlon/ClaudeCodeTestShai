@@ -1,14 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckSquare, Square, Sparkles, Wand2, Image as ImageIcon, Cog, RefreshCw } from 'lucide-react';
 import type { AspectRatio, Brief, Suggestion } from '../types';
 import { useStore } from '../state/store';
 import {
   ASPECT_RATIOS, IMAGE_MODELS, PRESET_FEATURES, PRESET_STYLES, PRESET_THEMES,
-  SEASONS, TEXT_MODELS, VIDEO_MODELS, findModel,
+  SEASONS, TEXT_MODELS, VIDEO_MODELS, findModel, modelsForProvider,
 } from '../lib/models';
 import { Button, Card, Chip, Field, SectionHeader, Select, Spinner, Textarea, TextInput, EmptyState, Toggle } from './ui';
 import { TagCloud } from './TagCloud';
-import { generateSuggestions, generateImage, falUpload, makeAnimatePrompt, generateVideo } from '../lib/api';
+import { generateSuggestions, generateImage, makeAnimatePrompt, generateVideo } from '../lib/api';
 import { putGeneration } from '../lib/storage';
 import { cls, uid } from '../lib/utils';
 
@@ -27,10 +27,28 @@ export function BriefBuilder() {
 
   const patch = (p: Partial<Brief>) => dispatch({ type: 'brief/patch', patch: p });
 
+  const apiKeys = state.settings.apiKeys;
+
+  // Filter model dropdowns by the provider chosen for that role.
+  const textProv  = apiKeys.text?.provider  ?? 'google';
+  const imageProv = apiKeys.image?.provider ?? 'google';
+  const videoProv = apiKeys.video?.provider ?? 'google';
+  const textModels  = useMemo(() => modelsForProvider(TEXT_MODELS,  textProv),  [textProv]);
+  const imageModels = useMemo(() => modelsForProvider(IMAGE_MODELS, imageProv), [imageProv]);
+  const videoModels = useMemo(() => modelsForProvider(VIDEO_MODELS, videoProv), [videoProv]);
+
   const imageModel = findModel(IMAGE_MODELS, brief.imageModel);
   const canUseRef = Boolean(imageModel?.supportsReference);
 
-  const apiKeys = state.settings.apiKeys;
+  // If the role's provider changed and the brief's chosen model no longer belongs to that
+  // provider, snap to the first available model for the new provider.
+  useEffect(() => {
+    const fixes: Partial<Brief> = {};
+    if (!textModels.some((m) => m.id === brief.textModel)   && textModels[0])  fixes.textModel  = textModels[0].id;
+    if (!imageModels.some((m) => m.id === brief.imageModel) && imageModels[0]) fixes.imageModel = imageModels[0].id;
+    if (!videoModels.some((m) => m.id === brief.videoModel) && videoModels[0]) fixes.videoModel = videoModels[0].id;
+    if (Object.keys(fixes).length) dispatch({ type: 'brief/patch', patch: fixes });
+  }, [textModels, imageModels, videoModels, brief.textModel, brief.imageModel, brief.videoModel, dispatch]);
 
   function addTitle() {
     const v = titleDraft.trim();
@@ -46,15 +64,15 @@ export function BriefBuilder() {
   }
 
   async function onGenerateSuggestions() {
-    if (!apiKeys.anthropic) {
-      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add your Anthropic API key in Settings first.' } });
+    if (!apiKeys.text?.key) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add your LLM (Text) API key in Settings first.' } });
       dispatch({ type: 'ui/openSettings', open: true });
       return;
     }
     dispatch({ type: 'ui/suggesting', value: true });
     try {
       const suggestions = await generateSuggestions({
-        apiKey: apiKeys.anthropic,
+        apiKeys,
         textModel: brief.textModel,
         brief: {
           brief,
@@ -79,8 +97,8 @@ export function BriefBuilder() {
       dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Pick at least one idea first.' } });
       return;
     }
-    if (!apiKeys.fal) {
-      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add your fal.ai API key in Settings first.' } });
+    if (!apiKeys.image?.key) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add your Image API key in Settings first.' } });
       dispatch({ type: 'ui/openSettings', open: true });
       return;
     }
@@ -88,15 +106,11 @@ export function BriefBuilder() {
 
     dispatch({ type: 'ui/generating', value: true });
 
-    // Upload reference images once and reuse URLs for all generations.
-    let referenceUrls: string[] = [];
+    // Collect reference data URLs once; the API layer uploads them per-call only when needed.
+    let referenceDataUrls: string[] = [];
     if (canUseRef) {
       const refs = [...characters, ...references, ...items, ...logos].slice(0, 3);
-      try {
-        referenceUrls = await Promise.all(refs.map((a) => falUpload(a.dataUrl, apiKeys.fal!, `${a.name}.png`)));
-      } catch (err: any) {
-        dispatch({ type: 'ui/toast', toast: { kind: 'error', message: `Could not upload reference: ${err?.message ?? err}` } });
-      }
+      referenceDataUrls = refs.map((a) => a.dataUrl);
     }
 
     const totalJobs = chosen.length * ratios.length;
@@ -121,24 +135,24 @@ export function BriefBuilder() {
           dispatch({ type: 'generations/upsert', generation: gen });
           try {
             const { url } = await generateImage({
-              apiKey: apiKeys.fal!,
+              apiKeys,
               model: brief.imageModel,
               prompt: sug.prompt,
               aspectRatio: ratio,
-              referenceUrls,
+              referenceDataUrls,
             });
             const completed = { ...gen, imageUrl: url, status: 'done' as const };
             dispatch({ type: 'generations/upsert', generation: completed });
             putGeneration(completed);
 
             // Optionally chain video generation.
-            if (animateOnGenerate && apiKeys.fal) {
+            if (animateOnGenerate && apiKeys.video?.key) {
               const animPrompt = makeAnimatePrompt({ title: sug.title, description: sug.description, prompt: sug.prompt });
               const withVideoQueued = { ...completed, video: { status: 'generating' as const, model: brief.videoModel, prompt: animPrompt } };
               dispatch({ type: 'generations/upsert', generation: withVideoQueued });
               try {
                 const { url: videoUrl } = await generateVideo({
-                  apiKey: apiKeys.fal,
+                  apiKeys,
                   model: brief.videoModel,
                   prompt: animPrompt,
                   imageUrl: url,
@@ -336,15 +350,15 @@ export function BriefBuilder() {
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Ideation model">
               <Select value={brief.textModel} onChange={(v) => patch({ textModel: v })}
-                options={TEXT_MODELS.map((m) => ({ value: m.id, label: m.name }))} />
+                options={textModels.map((m) => ({ value: m.id, label: m.name }))} />
             </Field>
             <Field label="Image model">
               <Select value={brief.imageModel} onChange={(v) => patch({ imageModel: v })}
-                options={IMAGE_MODELS.map((m) => ({ value: m.id, label: m.name }))} />
+                options={imageModels.map((m) => ({ value: m.id, label: m.name }))} />
             </Field>
             <Field label="Video model">
               <Select value={brief.videoModel} onChange={(v) => patch({ videoModel: v })}
-                options={VIDEO_MODELS.map((m) => ({ value: m.id, label: m.name }))} />
+                options={videoModels.map((m) => ({ value: m.id, label: m.name }))} />
             </Field>
             <Field label={`Ideas to brainstorm: ${brief.variationCount}`}>
               <input

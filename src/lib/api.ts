@@ -1,6 +1,64 @@
-import type { ApiKeys, AspectRatio, Suggestion } from '../types';
+import type { ApiKeys, AspectRatio, Provider, Role, RoleKey, Suggestion } from '../types';
 import { buildAnimatePromptHint, buildImagePromptEnhancer, buildSuggestionSystemPrompt, buildSuggestionUserPrompt, type BriefForLLM } from './prompts';
 import { dataUrlToBlob, falImageSize, klingAspect } from './utils';
+import { findModel, IMAGE_MODELS, TEXT_MODELS, VIDEO_MODELS } from './models';
+
+// ----- helpers --------------------------------------------------------------
+
+function getRole(keys: ApiKeys, role: Role): RoleKey {
+  const r = keys[role];
+  if (!r || !r.key) throw new Error(`No API key configured for ${role}. Open Settings to add one.`);
+  return r;
+}
+
+function providerOfModel(list: typeof TEXT_MODELS, modelId: string): Provider | null {
+  return findModel(list, modelId)?.provider ?? null;
+}
+
+/** Closest aspect ratio Imagen accepts. */
+function googleImageAspect(r: AspectRatio): '1:1' | '3:4' | '4:3' | '9:16' | '16:9' {
+  switch (r) {
+    case '1:1': return '1:1';
+    case '9:16': case '2:3': case '4:5': return '9:16';
+    case '16:9': case '3:2': case '5:4': return '16:9';
+    case '3:4': return '3:4';
+    case '4:3': return '4:3';
+    default: return '1:1';
+  }
+}
+
+/** Closest aspect ratio Veo accepts. */
+function googleVideoAspect(r: AspectRatio): '16:9' | '9:16' {
+  if (r === '9:16' || r === '3:4' || r === '4:5' || r === '2:3') return '9:16';
+  return '16:9';
+}
+
+async function urlToBase64(url: string): Promise<{ b64: string; mime: string }> {
+  if (url.startsWith('data:')) {
+    const [meta, b64] = url.split(',');
+    const mime = /data:([^;]+)/.exec(meta)?.[1] ?? 'image/png';
+    return { b64, mime };
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Could not fetch reference image (${res.status})`);
+  const blob = await res.blob();
+  const mime = blob.type || 'image/png';
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return { b64: btoa(bin), mime };
+}
+
+/** Strip ```json fences if a model wraps output. */
+function extractJson(text: string): any {
+  const fence = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
+  const body = fence ? fence[1] : text;
+  const start = body.indexOf('{');
+  const end = body.lastIndexOf('}');
+  const slice = start >= 0 && end > start ? body.slice(start, end + 1) : body;
+  return JSON.parse(slice);
+}
 
 // ----- Anthropic -----------------------------------------------------------
 
@@ -42,53 +100,126 @@ async function anthropicMessage(opts: {
   return blocks.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n').trim();
 }
 
-/** Strip ```json fences if a model wraps output. */
-function extractJson(text: string): any {
-  const fence = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-  const body = fence ? fence[1] : text;
-  // Find first { and last }
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  const slice = start >= 0 && end > start ? body.slice(start, end + 1) : body;
-  return JSON.parse(slice);
-}
+// ----- Google (Gemini / Imagen / Veo) --------------------------------------
 
-export async function generateSuggestions(opts: {
-  apiKey: string;
-  textModel: string;
-  brief: BriefForLLM;
-}): Promise<Suggestion[]> {
-  const raw = await anthropicMessage({
-    apiKey: opts.apiKey,
-    model: opts.textModel,
-    system: buildSuggestionSystemPrompt(),
-    user: buildSuggestionUserPrompt(opts.brief),
-    maxTokens: 6000,
-  });
-  const parsed = extractJson(raw) as { ideas: { title: string; description: string; prompt: string; tags?: string[] }[] };
-  return parsed.ideas.map((i, idx) => ({
-    id: `sug_${Date.now()}_${idx}`,
-    title: i.title ?? `Idea ${idx + 1}`,
-    description: i.description ?? '',
-    prompt: i.prompt ?? '',
-    tags: i.tags ?? [],
-    selected: true,
-  }));
-}
+const GOOGLE_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-export async function enhancePrompt(opts: {
+async function geminiMessage(opts: {
   apiKey: string;
-  textModel: string;
-  prompt: string;
+  model: string;
+  system: string;
+  user: string;
+  maxTokens?: number;
 }): Promise<string> {
-  const out = await anthropicMessage({
-    apiKey: opts.apiKey,
-    model: opts.textModel,
-    system: buildImagePromptEnhancer(),
-    user: opts.prompt,
-    maxTokens: 1500,
+  const url = `${GOOGLE_BASE}/models/${opts.model}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: opts.system }] },
+      contents: [{ role: 'user', parts: [{ text: opts.user }] }],
+      generationConfig: { maxOutputTokens: opts.maxTokens ?? 4096, temperature: 0.9 },
+    }),
   });
-  return out.trim();
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  const parts = data?.candidates?.[0]?.content?.parts ?? [];
+  return parts.map((p: any) => p?.text ?? '').join('\n').trim();
+}
+
+async function imagenGenerate(opts: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+}): Promise<{ url: string }> {
+  const url = `${GOOGLE_BASE}/models/${opts.model}:predict?key=${encodeURIComponent(opts.apiKey)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      instances: [{ prompt: opts.prompt }],
+      parameters: {
+        aspectRatio: googleImageAspect(opts.aspectRatio),
+        sampleCount: 1,
+        personGeneration: 'allow_adult',
+      },
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Imagen API error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  const pred = data?.predictions?.[0];
+  const b64 = pred?.bytesBase64Encoded ?? pred?.image?.bytesBase64Encoded;
+  if (!b64) throw new Error('Imagen returned no image bytes.');
+  const mime = pred?.mimeType ?? 'image/png';
+  return { url: `data:${mime};base64,${b64}` };
+}
+
+async function veoGenerate(opts: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  imageUrl: string;
+  aspectRatio: AspectRatio;
+  onProgress?: (status: string) => void;
+}): Promise<{ url: string }> {
+  const submitUrl = `${GOOGLE_BASE}/models/${opts.model}:predictLongRunning?key=${encodeURIComponent(opts.apiKey)}`;
+  const { b64, mime } = await urlToBase64(opts.imageUrl);
+  const submit = await fetch(submitUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      instances: [{ prompt: opts.prompt, image: { bytesBase64Encoded: b64, mimeType: mime } }],
+      parameters: {
+        aspectRatio: googleVideoAspect(opts.aspectRatio),
+        durationSeconds: 8,
+        personGeneration: 'allow_adult',
+        numberOfVideos: 1,
+      },
+    }),
+  });
+  if (!submit.ok) {
+    const text = await submit.text();
+    throw new Error(`Veo submit error ${submit.status}: ${text.slice(0, 400)}`);
+  }
+  const op = await submit.json();
+  const opName = op?.name;
+  if (!opName) throw new Error('Veo did not return an operation name.');
+
+  const start = Date.now();
+  while (Date.now() - start < 10 * 60 * 1000) {
+    const poll = await fetch(`${GOOGLE_BASE}/${opName}?key=${encodeURIComponent(opts.apiKey)}`);
+    if (!poll.ok) throw new Error(`Veo poll error ${poll.status}`);
+    const pd = await poll.json();
+    opts.onProgress?.(pd?.metadata?.state ?? 'RUNNING');
+    if (pd?.done) {
+      if (pd?.error) throw new Error(`Veo error: ${pd.error?.message ?? JSON.stringify(pd.error)}`);
+      const resp = pd?.response ?? {};
+      const sample =
+        resp?.generatedVideos?.[0] ??
+        resp?.generateVideoResponse?.generatedSamples?.[0] ??
+        resp?.videos?.[0];
+      const videoB64 = sample?.video?.bytesBase64Encoded ?? sample?.bytesBase64Encoded;
+      const uri = sample?.video?.uri ?? sample?.uri;
+      if (videoB64) {
+        return { url: `data:video/mp4;base64,${videoB64}` };
+      }
+      if (uri) {
+        // Google video URIs require the API key appended to download from the browser.
+        const sep = uri.includes('?') ? '&' : '?';
+        return { url: `${uri}${sep}key=${encodeURIComponent(opts.apiKey)}` };
+      }
+      throw new Error('Veo job completed but no video was returned.');
+    }
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  throw new Error('Veo job timed out.');
 }
 
 // ----- fal.ai --------------------------------------------------------------
@@ -149,16 +280,14 @@ export async function falUpload(dataUrl: string, apiKey: string, filename = 'upl
   return file_url as string;
 }
 
-export interface ImageGenInput {
+async function falGenerateImage(opts: {
   apiKey: string;
   model: string;
   prompt: string;
   aspectRatio: AspectRatio;
   referenceUrls?: string[];
   onProgress?: (status: string) => void;
-}
-
-export async function generateImage(opts: ImageGenInput): Promise<{ url: string }> {
+}): Promise<{ url: string }> {
   const { model, apiKey, prompt, aspectRatio, referenceUrls = [], onProgress } = opts;
   const imgSize = falImageSize(aspectRatio);
 
@@ -180,7 +309,6 @@ export async function generateImage(opts: ImageGenInput): Promise<{ url: string 
     input.image_size = imgSize;
     input.style = 'digital_illustration';
   } else {
-    // flux-pro / flux-dev family
     input.image_size = imgSize;
     input.num_images = 1;
     input.enable_safety_checker = true;
@@ -190,22 +318,19 @@ export async function generateImage(opts: ImageGenInput): Promise<{ url: string 
   await falPoll(submit.status_url, apiKey, onProgress);
   const out = await falResult<any>(submit.response_url, apiKey);
 
-  // fal models return either {images: [{url}]} or {image: {url}}
   const url: string | undefined = out?.images?.[0]?.url ?? out?.image?.url ?? out?.url;
   if (!url) throw new Error('Image URL not found in fal response');
   return { url };
 }
 
-export interface VideoGenInput {
+async function falGenerateVideo(opts: {
   apiKey: string;
   model: string;
   prompt: string;
   imageUrl: string;
   aspectRatio: AspectRatio;
   onProgress?: (status: string) => void;
-}
-
-export async function generateVideo(opts: VideoGenInput): Promise<{ url: string }> {
+}): Promise<{ url: string }> {
   const { apiKey, model, prompt, imageUrl, aspectRatio, onProgress } = opts;
   const input: Record<string, unknown> = { prompt, image_url: imageUrl };
 
@@ -231,48 +356,173 @@ export async function generateVideo(opts: VideoGenInput): Promise<{ url: string 
   return { url };
 }
 
+// ----- Provider-dispatched public API --------------------------------------
+
+export async function generateSuggestions(opts: {
+  apiKeys: ApiKeys;
+  textModel: string;
+  brief: BriefForLLM;
+}): Promise<Suggestion[]> {
+  const role = getRole(opts.apiKeys, 'text');
+  const modelProvider = providerOfModel(TEXT_MODELS, opts.textModel) ?? role.provider;
+  if (modelProvider !== role.provider) {
+    throw new Error(`Text model "${opts.textModel}" requires the ${modelProvider} provider, but your Text key is set to ${role.provider}.`);
+  }
+
+  const system = buildSuggestionSystemPrompt();
+  const user = buildSuggestionUserPrompt(opts.brief);
+  const raw = role.provider === 'google'
+    ? await geminiMessage({ apiKey: role.key, model: opts.textModel, system, user, maxTokens: 6000 })
+    : await anthropicMessage({ apiKey: role.key, model: opts.textModel, system, user, maxTokens: 6000 });
+
+  const parsed = extractJson(raw) as { ideas: { title: string; description: string; prompt: string; tags?: string[] }[] };
+  return parsed.ideas.map((i, idx) => ({
+    id: `sug_${Date.now()}_${idx}`,
+    title: i.title ?? `Idea ${idx + 1}`,
+    description: i.description ?? '',
+    prompt: i.prompt ?? '',
+    tags: i.tags ?? [],
+    selected: true,
+  }));
+}
+
+export async function enhancePrompt(opts: {
+  apiKeys: ApiKeys;
+  textModel: string;
+  prompt: string;
+}): Promise<string> {
+  const role = getRole(opts.apiKeys, 'text');
+  const system = buildImagePromptEnhancer();
+  const out = role.provider === 'google'
+    ? await geminiMessage({ apiKey: role.key, model: opts.textModel, system, user: opts.prompt, maxTokens: 1500 })
+    : await anthropicMessage({ apiKey: role.key, model: opts.textModel, system, user: opts.prompt, maxTokens: 1500 });
+  return out.trim();
+}
+
+export interface ImageGenInput {
+  apiKeys: ApiKeys;
+  model: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+  /** Asset data URLs to use as references (will be uploaded to fal if needed). */
+  referenceDataUrls?: string[];
+  onProgress?: (status: string) => void;
+}
+
+export async function generateImage(opts: ImageGenInput): Promise<{ url: string }> {
+  const role = getRole(opts.apiKeys, 'image');
+  const modelProvider = providerOfModel(IMAGE_MODELS, opts.model) ?? role.provider;
+  if (modelProvider !== role.provider) {
+    throw new Error(`Image model "${opts.model}" requires the ${modelProvider} provider, but your Image key is set to ${role.provider}.`);
+  }
+
+  if (role.provider === 'google') {
+    return imagenGenerate({ apiKey: role.key, model: opts.model, prompt: opts.prompt, aspectRatio: opts.aspectRatio });
+  }
+
+  let referenceUrls: string[] = [];
+  if (opts.referenceDataUrls?.length) {
+    referenceUrls = await Promise.all(
+      opts.referenceDataUrls.slice(0, 3).map((d, i) => falUpload(d, role.key, `ref-${i}.png`)),
+    );
+  }
+  return falGenerateImage({
+    apiKey: role.key,
+    model: opts.model,
+    prompt: opts.prompt,
+    aspectRatio: opts.aspectRatio,
+    referenceUrls,
+    onProgress: opts.onProgress,
+  });
+}
+
+export interface VideoGenInput {
+  apiKeys: ApiKeys;
+  model: string;
+  prompt: string;
+  imageUrl: string;
+  aspectRatio: AspectRatio;
+  onProgress?: (status: string) => void;
+}
+
+export async function generateVideo(opts: VideoGenInput): Promise<{ url: string }> {
+  const role = getRole(opts.apiKeys, 'video');
+  const modelProvider = providerOfModel(VIDEO_MODELS, opts.model) ?? role.provider;
+  if (modelProvider !== role.provider) {
+    throw new Error(`Video model "${opts.model}" requires the ${modelProvider} provider, but your Video key is set to ${role.provider}.`);
+  }
+
+  if (role.provider === 'google') {
+    return veoGenerate({
+      apiKey: role.key,
+      model: opts.model,
+      prompt: opts.prompt,
+      imageUrl: opts.imageUrl,
+      aspectRatio: opts.aspectRatio,
+      onProgress: opts.onProgress,
+    });
+  }
+
+  // fal video needs a public URL — if the image is a data URL, upload it first.
+  let publicImageUrl = opts.imageUrl;
+  if (publicImageUrl.startsWith('data:')) {
+    publicImageUrl = await falUpload(publicImageUrl, role.key, 'frame.png');
+  }
+  return falGenerateVideo({
+    apiKey: role.key,
+    model: opts.model,
+    prompt: opts.prompt,
+    imageUrl: publicImageUrl,
+    aspectRatio: opts.aspectRatio,
+    onProgress: opts.onProgress,
+  });
+}
+
 export function makeAnimatePrompt(suggestion: { title: string; description: string; prompt: string }): string {
   return buildAnimatePromptHint(suggestion);
 }
 
 // ----- API key validators -------------------------------------------------
 
-export async function pingAnthropic(apiKey: string): Promise<boolean> {
+export async function pingProvider(provider: Provider, apiKey: string): Promise<boolean> {
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: ANTHROPIC_MODEL_MAP['claude-haiku-4-5'],
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'hi' }],
-      }),
-    });
-    return res.ok || res.status === 400; // 400 still proves auth worked
+    if (provider === 'google') {
+      const res = await fetch(`${GOOGLE_BASE}/models?key=${encodeURIComponent(apiKey)}&pageSize=1`);
+      return res.ok;
+    }
+    if (provider === 'anthropic') {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: ANTHROPIC_MODEL_MAP['claude-haiku-4-5'],
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+      return res.ok || res.status === 400;
+    }
+    if (provider === 'fal') {
+      const res = await fetch(`${FAL_REST}/storage/upload/initiate`, {
+        method: 'POST',
+        headers: { Authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ file_name: 'x.txt', content_type: 'text/plain' }),
+      });
+      return res.ok || res.status === 400;
+    }
+    if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/models', {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      return res.ok;
+    }
+    return false;
   } catch {
     return false;
   }
-}
-
-export async function pingFal(apiKey: string): Promise<boolean> {
-  try {
-    // hit a known cheap endpoint just to verify auth header is accepted
-    const res = await fetch(`${FAL_REST}/storage/upload/initiate`, {
-      method: 'POST',
-      headers: { Authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ file_name: 'x.txt', content_type: 'text/plain' }),
-    });
-    return res.ok || res.status === 400;
-  } catch {
-    return false;
-  }
-}
-
-export function hasKeys(keys: ApiKeys, providers: Array<keyof ApiKeys>): boolean {
-  return providers.every((p) => Boolean(keys[p]?.trim()));
 }

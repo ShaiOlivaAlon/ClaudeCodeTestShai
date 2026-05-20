@@ -1,4 +1,4 @@
-import type { Asset, Generation, Settings } from '../types';
+import type { ApiKeys, Asset, Generation, Settings } from '../types';
 
 const DB_NAME = 'playtika-artist-studio';
 const DB_VERSION = 1;
@@ -47,18 +47,51 @@ function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore)
 
 export const DEFAULT_SETTINGS: Settings = {
   apiKeys: {},
-  defaultTextModel: 'claude-sonnet-4-6',
-  defaultImageModel: 'fal-ai/flux-pro/v1.1',
-  defaultVideoModel: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+  defaultTextModel: 'gemini-2.5-flash',
+  defaultImageModel: 'imagen-4.0-generate-001',
+  defaultVideoModel: 'veo-3.0-fast-generate-001',
   setupComplete: false,
 };
+
+/** Migrate the pre-role flat key shape ({ anthropic, fal, openai }) to role-based. */
+function migrateApiKeys(raw: unknown): ApiKeys {
+  if (!raw || typeof raw !== 'object') return {};
+  const r = raw as Record<string, unknown>;
+  // Already role-based?
+  const looksRoleBased = ['text', 'image', 'video'].some((k) => {
+    const v = r[k];
+    return v && typeof v === 'object' && 'provider' in (v as object);
+  });
+  if (looksRoleBased) {
+    const out: ApiKeys = {};
+    for (const role of ['text', 'image', 'video'] as const) {
+      const v = r[role] as { provider?: string; key?: string } | undefined;
+      if (v?.key && v.provider) out[role] = { provider: v.provider as any, key: v.key };
+    }
+    return out;
+  }
+  // Legacy flat shape: { anthropic, fal, openai }
+  const out: ApiKeys = {};
+  const ant = typeof r.anthropic === 'string' ? r.anthropic.trim() : '';
+  const fal = typeof r.fal === 'string' ? r.fal.trim() : '';
+  if (ant) out.text = { provider: 'anthropic', key: ant };
+  if (fal) {
+    out.image = { provider: 'fal', key: fal };
+    out.video = { provider: 'fal', key: fal };
+  }
+  return out;
+}
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
-    const parsed = JSON.parse(raw) as Partial<Settings>;
-    return { ...DEFAULT_SETTINGS, ...parsed, apiKeys: { ...parsed.apiKeys } };
+    const parsed = JSON.parse(raw) as Partial<Settings> & { apiKeys?: unknown };
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      apiKeys: migrateApiKeys(parsed.apiKeys),
+    };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

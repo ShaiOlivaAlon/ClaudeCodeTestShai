@@ -1,9 +1,9 @@
-import type { AspectRatio } from '../types';
+import type { AspectRatio, Provider } from '../types';
 
 export interface ModelDef {
   id: string;
   name: string;
-  provider: 'anthropic' | 'fal' | 'openai';
+  provider: Provider;
   description?: string;
   /** If true, this image model accepts a reference image (character / IP consistency). */
   supportsReference?: boolean;
@@ -11,30 +11,57 @@ export interface ModelDef {
   supportsText?: boolean;
 }
 
+export const PROVIDER_LABEL: Record<Provider, string> = {
+  google: 'Google AI Studio',
+  anthropic: 'Anthropic',
+  fal: 'fal.ai',
+  openai: 'OpenAI',
+};
+
+export const TEXT_PROVIDERS: Provider[] = ['google', 'anthropic'];
+export const IMAGE_PROVIDERS: Provider[] = ['google', 'fal'];
+export const VIDEO_PROVIDERS: Provider[] = ['google', 'fal'];
+
 export const TEXT_MODELS: ModelDef[] = [
+  { id: 'gemini-2.5-pro',     name: 'Gemini 2.5 Pro',     provider: 'google',    description: 'Most capable Google model — deepest reasoning.' },
+  { id: 'gemini-2.5-flash',   name: 'Gemini 2.5 Flash',   provider: 'google',    description: 'Fast, balanced — recommended default.' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'google', description: 'Fastest, cheapest — quick brainstorms.' },
   { id: 'claude-opus-4-7',    name: 'Claude Opus 4.7',    provider: 'anthropic', description: 'Most capable — deepest concept exploration.' },
-  { id: 'claude-sonnet-4-6',  name: 'Claude Sonnet 4.6',  provider: 'anthropic', description: 'Balanced speed and creativity (default).' },
-  { id: 'claude-haiku-4-5',   name: 'Claude Haiku 4.5',   provider: 'anthropic', description: 'Fastest — quick brainstorming.' },
+  { id: 'claude-sonnet-4-6',  name: 'Claude Sonnet 4.6',  provider: 'anthropic', description: 'Balanced speed and creativity.' },
+  { id: 'claude-haiku-4-5',   name: 'Claude Haiku 4.5',   provider: 'anthropic', description: 'Fastest Claude — quick brainstorming.' },
 ];
 
 export const IMAGE_MODELS: ModelDef[] = [
-  { id: 'fal-ai/flux-pro/v1.1-ultra', name: 'FLUX 1.1 Pro Ultra', provider: 'fal', description: 'Top-tier quality, slower.' },
-  { id: 'fal-ai/flux-pro/v1.1',       name: 'FLUX 1.1 Pro',       provider: 'fal', description: 'Sharp marketing-grade output.' },
-  { id: 'fal-ai/flux/dev',            name: 'FLUX Dev',           provider: 'fal', description: 'Fast iterations.' },
-  { id: 'fal-ai/flux-pulid',          name: 'FLUX + Character',   provider: 'fal', description: 'Keeps character identity from a reference.', supportsReference: true },
-  { id: 'fal-ai/flux/dev/image-to-image', name: 'FLUX Img-to-Img', provider: 'fal', description: 'Re-styles a reference frame.', supportsReference: true },
-  { id: 'fal-ai/ideogram/v2',         name: 'Ideogram v2',        provider: 'fal', description: 'Best for embedded title text.', supportsText: true },
-  { id: 'fal-ai/recraft-v3',          name: 'Recraft v3',         provider: 'fal', description: 'Vector & illustration styles.' },
-  { id: 'openai/gpt-image-1',         name: 'GPT Image 1',        provider: 'openai', description: 'OpenAI native, supports text + refs.', supportsReference: true, supportsText: true },
+  { id: 'imagen-4.0-generate-001',         name: 'Imagen 4',           provider: 'google', description: 'Google flagship — sharp, accurate.' },
+  { id: 'imagen-4.0-ultra-generate-001',   name: 'Imagen 4 Ultra',     provider: 'google', description: 'Highest quality Imagen, slower.' },
+  { id: 'imagen-4.0-fast-generate-001',    name: 'Imagen 4 Fast',      provider: 'google', description: 'Fast iteration on Google.' },
+  { id: 'fal-ai/flux-pro/v1.1-ultra',      name: 'FLUX 1.1 Pro Ultra', provider: 'fal',    description: 'Top-tier quality, slower.' },
+  { id: 'fal-ai/flux-pro/v1.1',            name: 'FLUX 1.1 Pro',       provider: 'fal',    description: 'Sharp marketing-grade output.' },
+  { id: 'fal-ai/flux/dev',                 name: 'FLUX Dev',           provider: 'fal',    description: 'Fast iterations.' },
+  { id: 'fal-ai/flux-pulid',               name: 'FLUX + Character',   provider: 'fal',    description: 'Keeps character identity from a reference.', supportsReference: true },
+  { id: 'fal-ai/flux/dev/image-to-image',  name: 'FLUX Img-to-Img',    provider: 'fal',    description: 'Re-styles a reference frame.', supportsReference: true },
+  { id: 'fal-ai/ideogram/v2',              name: 'Ideogram v2',        provider: 'fal',    description: 'Best for embedded title text.', supportsText: true },
+  { id: 'fal-ai/recraft-v3',               name: 'Recraft v3',         provider: 'fal',    description: 'Vector & illustration styles.' },
 ];
 
 export const VIDEO_MODELS: ModelDef[] = [
-  { id: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', name: 'Kling 2.5 Turbo Pro', provider: 'fal', description: 'High-motion 5–10s clips.' },
-  { id: 'fal-ai/kling-video/v1.6/standard/image-to-video',  name: 'Kling 1.6 Standard',  provider: 'fal', description: 'Cheaper, decent motion.' },
-  { id: 'fal-ai/runway-gen3/turbo/image-to-video',          name: 'Runway Gen-3 Turbo',  provider: 'fal', description: 'Cinematic camera moves.' },
-  { id: 'fal-ai/luma-dream-machine',                        name: 'Luma Dream Machine',  provider: 'fal', description: 'Dreamy, painterly motion.' },
-  { id: 'fal-ai/veo3/fast/image-to-video',                  name: 'Veo 3 Fast',          provider: 'fal', description: 'Photoreal motion.' },
+  { id: 'veo-3.0-generate-001',                             name: 'Veo 3',               provider: 'google', description: 'Google latest — photoreal motion.' },
+  { id: 'veo-3.0-fast-generate-001',                        name: 'Veo 3 Fast',          provider: 'google', description: 'Faster, slightly lower quality Veo 3.' },
+  { id: 'veo-2.0-generate-001',                             name: 'Veo 2',               provider: 'google', description: 'Mature, broadly available Google video model.' },
+  { id: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', name: 'Kling 2.5 Turbo Pro', provider: 'fal',    description: 'High-motion 5–10s clips.' },
+  { id: 'fal-ai/kling-video/v1.6/standard/image-to-video',  name: 'Kling 1.6 Standard',  provider: 'fal',    description: 'Cheaper, decent motion.' },
+  { id: 'fal-ai/runway-gen3/turbo/image-to-video',          name: 'Runway Gen-3 Turbo',  provider: 'fal',    description: 'Cinematic camera moves.' },
+  { id: 'fal-ai/luma-dream-machine',                        name: 'Luma Dream Machine',  provider: 'fal',    description: 'Dreamy, painterly motion.' },
+  { id: 'fal-ai/veo3/fast/image-to-video',                  name: 'Veo 3 Fast (via fal)',provider: 'fal',    description: 'Veo 3 routed through fal.ai.' },
 ];
+
+export function modelsForProvider(list: ModelDef[], provider: Provider): ModelDef[] {
+  return list.filter((m) => m.provider === provider);
+}
+
+export function defaultModelFor(list: ModelDef[], provider: Provider): string {
+  return modelsForProvider(list, provider)[0]?.id ?? list[0].id;
+}
 
 export const ASPECT_RATIOS: { id: AspectRatio; label: string; w: number; h: number; use: string }[] = [
   { id: '1:1',  label: '1:1',  w: 1,  h: 1,  use: 'Square — Instagram, store icon' },

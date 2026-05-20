@@ -1,7 +1,7 @@
 import { Download, Film, Copy, RefreshCw } from 'lucide-react';
 import { useStore } from '../state/store';
 import { Button, Modal, Spinner } from './ui';
-import { generateImage, generateVideo, falUpload, makeAnimatePrompt } from '../lib/api';
+import { generateImage, generateVideo, makeAnimatePrompt } from '../lib/api';
 import { putGeneration } from '../lib/storage';
 import { copyToClipboard, downloadUrl } from '../lib/utils';
 import { useState } from 'react';
@@ -20,7 +20,7 @@ function DetailModalBody({ g }: { g: Generation }) {
   const [busy, setBusy] = useState(false);
 
   async function animate() {
-    if (!g.imageUrl || !state.settings.apiKeys.fal) return;
+    if (!g.imageUrl || !state.settings.apiKeys.video?.key) return;
     setBusy(true);
     const queued: Generation = {
       ...g,
@@ -33,7 +33,7 @@ function DetailModalBody({ g }: { g: Generation }) {
     dispatch({ type: 'generations/upsert', generation: queued });
     try {
       const { url } = await generateVideo({
-        apiKey: state.settings.apiKeys.fal,
+        apiKeys: state.settings.apiKeys,
         model: state.brief.videoModel,
         prompt: queued.video!.prompt,
         imageUrl: g.imageUrl,
@@ -49,19 +49,18 @@ function DetailModalBody({ g }: { g: Generation }) {
   }
 
   async function regen() {
-    if (!state.settings.apiKeys.fal) return;
+    if (!state.settings.apiKeys.image?.key) return;
     setBusy(true);
     const queued: Generation = { ...g, status: 'generating' };
     dispatch({ type: 'generations/upsert', generation: queued });
     try {
       const refs = state.assets.filter((a) => g.referenceAssetIds.includes(a.id)).slice(0, 3);
-      const referenceUrls = await Promise.all(refs.map((a) => falUpload(a.dataUrl, state.settings.apiKeys.fal!, `${a.name}.png`)));
       const { url } = await generateImage({
-        apiKey: state.settings.apiKeys.fal,
+        apiKeys: state.settings.apiKeys,
         model: g.imageModel,
         prompt: g.prompt,
         aspectRatio: g.aspectRatio,
-        referenceUrls,
+        referenceDataUrls: refs.map((a) => a.dataUrl),
       });
       const done: Generation = { ...queued, status: 'done', imageUrl: url };
       dispatch({ type: 'generations/upsert', generation: done });

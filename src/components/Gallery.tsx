@@ -3,7 +3,7 @@ import { Download, Film, Image as ImageIcon, Trash2, RefreshCw, Maximize2, Copy 
 import type { Generation } from '../types';
 import { useStore } from '../state/store';
 import { Button, EmptyState, Spinner } from './ui';
-import { generateImage, generateVideo, makeAnimatePrompt, falUpload } from '../lib/api';
+import { generateImage, generateVideo, makeAnimatePrompt } from '../lib/api';
 import { deleteGeneration, putGeneration } from '../lib/storage';
 import { cls, copyToClipboard, downloadUrl, shortText } from '../lib/utils';
 
@@ -51,8 +51,8 @@ function GalleryCard({ g }: { g: Generation }) {
 
   async function animate() {
     if (!g.imageUrl) return;
-    if (!state.settings.apiKeys.fal) {
-      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add a fal.ai key in Settings.' } });
+    if (!state.settings.apiKeys.video?.key) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add a Video API key in Settings.' } });
       return;
     }
     const animPrompt = makeAnimatePrompt({ title: g.title, description: '', prompt: g.prompt });
@@ -61,7 +61,7 @@ function GalleryCard({ g }: { g: Generation }) {
     setBusy(true);
     try {
       const { url } = await generateVideo({
-        apiKey: state.settings.apiKeys.fal,
+        apiKeys: state.settings.apiKeys,
         model: state.brief.videoModel,
         prompt: animPrompt,
         imageUrl: g.imageUrl,
@@ -80,22 +80,21 @@ function GalleryCard({ g }: { g: Generation }) {
   }
 
   async function regenerate() {
-    if (!state.settings.apiKeys.fal) return;
+    if (!state.settings.apiKeys.image?.key) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add an Image API key in Settings.' } });
+      return;
+    }
     setBusy(true);
     const queued: Generation = { ...g, status: 'generating' };
     dispatch({ type: 'generations/upsert', generation: queued });
     try {
-      let referenceUrls: string[] = [];
       const refs = state.assets.filter((a) => g.referenceAssetIds.includes(a.id)).slice(0, 3);
-      if (refs.length) {
-        referenceUrls = await Promise.all(refs.map((a) => falUpload(a.dataUrl, state.settings.apiKeys.fal!, `${a.name}.png`)));
-      }
       const { url } = await generateImage({
-        apiKey: state.settings.apiKeys.fal,
+        apiKeys: state.settings.apiKeys,
         model: g.imageModel,
         prompt: g.prompt,
         aspectRatio: g.aspectRatio,
-        referenceUrls,
+        referenceDataUrls: refs.map((a) => a.dataUrl),
       });
       const done: Generation = { ...queued, status: 'done', imageUrl: url, createdAt: Date.now() };
       dispatch({ type: 'generations/upsert', generation: done });

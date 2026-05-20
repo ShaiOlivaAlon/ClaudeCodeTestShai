@@ -65,10 +65,19 @@ export interface Generation {
   referenceAssetIds: string[];
 }
 
+export type Provider = 'google' | 'anthropic' | 'fal' | 'openai';
+
+export type Role = 'text' | 'image' | 'video';
+
+export interface RoleKey {
+  provider: Provider;
+  key: string;
+}
+
 export interface ApiKeys {
-  anthropic?: string;
-  openai?: string;
-  fal?: string;
+  text?: RoleKey;
+  image?: RoleKey;
+  video?: RoleKey;
 }
 
 export interface Settings {
