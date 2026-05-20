@@ -4,8 +4,9 @@ import type { AspectRatio, Brief, Suggestion } from '../types';
 import { useStore } from '../state/store';
 import {
   ASPECT_RATIOS, IMAGE_MODELS, PRESET_FEATURES, PRESET_STYLES, PRESET_THEMES,
-  SEASONS, TEXT_MODELS, VIDEO_MODELS, findModel, modelsForProvider,
+  SEASONS, findModel,
 } from '../lib/models';
+import { useProviderModels, labelWithNew } from '../lib/googleModels';
 import { Button, Card, Chip, Field, SectionHeader, Select, Spinner, Textarea, TextInput, EmptyState, Toggle } from './ui';
 import { TagCloud } from './TagCloud';
 import { generateSuggestions, generateImage, makeAnimatePrompt, generateVideo } from '../lib/api';
@@ -33,9 +34,9 @@ export function BriefBuilder() {
   const textProv  = apiKeys.text?.provider  ?? 'google';
   const imageProv = apiKeys.image?.provider ?? 'google';
   const videoProv = apiKeys.video?.provider ?? 'google';
-  const textModels  = useMemo(() => modelsForProvider(TEXT_MODELS,  textProv),  [textProv]);
-  const imageModels = useMemo(() => modelsForProvider(IMAGE_MODELS, imageProv), [imageProv]);
-  const videoModels = useMemo(() => modelsForProvider(VIDEO_MODELS, videoProv), [videoProv]);
+  const textModels  = useProviderModels('text',  textProv,  apiKeys.text?.key);
+  const imageModels = useProviderModels('image', imageProv, apiKeys.image?.key);
+  const videoModels = useProviderModels('video', videoProv, apiKeys.video?.key);
 
   const imageModel = findModel(IMAGE_MODELS, brief.imageModel);
   const canUseRef = Boolean(imageModel?.supportsReference);
@@ -350,15 +351,15 @@ export function BriefBuilder() {
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Ideation model">
               <Select value={brief.textModel} onChange={(v) => patch({ textModel: v })}
-                options={textModels.map((m) => ({ value: m.id, label: m.name }))} />
+                options={textModels.map((m) => ({ value: m.id, label: labelWithNew(m.name, m.isNew) }))} />
             </Field>
             <Field label="Image model">
               <Select value={brief.imageModel} onChange={(v) => patch({ imageModel: v })}
-                options={imageModels.map((m) => ({ value: m.id, label: m.name }))} />
+                options={imageModels.map((m) => ({ value: m.id, label: labelWithNew(m.name, m.isNew) }))} />
             </Field>
             <Field label="Video model">
               <Select value={brief.videoModel} onChange={(v) => patch({ videoModel: v })}
-                options={videoModels.map((m) => ({ value: m.id, label: m.name }))} />
+                options={videoModels.map((m) => ({ value: m.id, label: labelWithNew(m.name, m.isNew) }))} />
             </Field>
             <Field label={`Ideas to brainstorm: ${brief.variationCount}`}>
               <input

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Check, KeyRound, Trash2, Copy } from 'lucide-react';
 import type { ApiKeys, Provider, Role } from '../types';
 import { useStore } from '../state/store';
@@ -6,8 +6,9 @@ import { saveSettings } from '../lib/storage';
 import { Button, Field, Modal, Select, Spinner, TextInput } from './ui';
 import {
   IMAGE_MODELS, IMAGE_PROVIDERS, PROVIDER_LABEL, TEXT_MODELS, TEXT_PROVIDERS,
-  VIDEO_MODELS, VIDEO_PROVIDERS, modelsForProvider, defaultModelFor,
+  VIDEO_MODELS, VIDEO_PROVIDERS, defaultModelFor,
 } from '../lib/models';
+import { useProviderModels, labelWithNew } from '../lib/googleModels';
 import { clearAllGenerations } from '../lib/storage';
 import { pingProvider } from '../lib/api';
 
@@ -106,9 +107,9 @@ export function SettingsModal() {
   const imageProv = draft.apiKeys.image?.provider ?? 'google';
   const videoProv = draft.apiKeys.video?.provider ?? 'google';
 
-  const textModelOptions  = useMemo(() => modelsForProvider(TEXT_MODELS,  textProv),  [textProv]);
-  const imageModelOptions = useMemo(() => modelsForProvider(IMAGE_MODELS, imageProv), [imageProv]);
-  const videoModelOptions = useMemo(() => modelsForProvider(VIDEO_MODELS, videoProv), [videoProv]);
+  const textModelOptions  = useProviderModels('text',  textProv,  draft.apiKeys.text?.key);
+  const imageModelOptions = useProviderModels('image', imageProv, draft.apiKeys.image?.key);
+  const videoModelOptions = useProviderModels('video', videoProv, draft.apiKeys.video?.key);
 
   return (
     <Modal open={open} onClose={close} title="Settings" wide>
@@ -160,17 +161,17 @@ export function SettingsModal() {
 
           <Field label={`Text / ideation (${PROVIDER_LABEL[textProv]})`}>
             <Select value={draft.defaultTextModel} onChange={(v) => setDraft({ ...draft, defaultTextModel: v })}
-              options={textModelOptions.map((m) => ({ value: m.id, label: m.name, hint: m.description }))} />
+              options={textModelOptions.map((m) => ({ value: m.id, label: labelWithNew(m.name, m.isNew), hint: m.description }))} />
           </Field>
 
           <Field label={`Image (${PROVIDER_LABEL[imageProv]})`}>
             <Select value={draft.defaultImageModel} onChange={(v) => setDraft({ ...draft, defaultImageModel: v })}
-              options={imageModelOptions.map((m) => ({ value: m.id, label: m.name, hint: m.description }))} />
+              options={imageModelOptions.map((m) => ({ value: m.id, label: labelWithNew(m.name, m.isNew), hint: m.description }))} />
           </Field>
 
           <Field label={`Video (${PROVIDER_LABEL[videoProv]})`}>
             <Select value={draft.defaultVideoModel} onChange={(v) => setDraft({ ...draft, defaultVideoModel: v })}
-              options={videoModelOptions.map((m) => ({ value: m.id, label: m.name, hint: m.description }))} />
+              options={videoModelOptions.map((m) => ({ value: m.id, label: labelWithNew(m.name, m.isNew), hint: m.description }))} />
           </Field>
 
           <div className="border-t border-ink-700 pt-4">
