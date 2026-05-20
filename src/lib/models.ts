@@ -16,10 +16,11 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
   anthropic: 'Anthropic',
   fal: 'fal.ai',
   openai: 'OpenAI',
+  'azure-openai': 'Azure OpenAI',
 };
 
-export const TEXT_PROVIDERS: Provider[] = ['google', 'anthropic'];
-export const IMAGE_PROVIDERS: Provider[] = ['google', 'fal'];
+export const TEXT_PROVIDERS: Provider[] = ['google', 'anthropic', 'openai', 'azure-openai'];
+export const IMAGE_PROVIDERS: Provider[] = ['google', 'fal', 'openai', 'azure-openai'];
 export const VIDEO_PROVIDERS: Provider[] = ['google', 'fal'];
 
 export const TEXT_MODELS: ModelDef[] = [
@@ -30,6 +31,12 @@ export const TEXT_MODELS: ModelDef[] = [
   { id: 'claude-opus-4-7',       name: 'Claude Opus 4.7',       provider: 'anthropic', description: 'Most capable Claude.' },
   { id: 'claude-sonnet-4-6',     name: 'Claude Sonnet 4.6',     provider: 'anthropic', description: 'Balanced Claude — speed + creativity.' },
   { id: 'claude-haiku-4-5',      name: 'Claude Haiku 4.5',      provider: 'anthropic', description: 'Fastest Claude.' },
+  { id: 'gpt-4o',                name: 'GPT-4o',                provider: 'openai',    description: 'Fast multimodal OpenAI flagship.' },
+  { id: 'gpt-4o-mini',           name: 'GPT-4o mini',           provider: 'openai',    description: 'Cheapest, fastest GPT.' },
+  { id: 'gpt-4-turbo',           name: 'GPT-4 Turbo',           provider: 'openai',    description: 'Older but reliable GPT-4.' },
+  { id: 'o3-mini',               name: 'o3-mini',               provider: 'openai',    description: 'Reasoning model, faster than o1.' },
+  { id: 'o1',                    name: 'o1',                    provider: 'openai',    description: 'Deep reasoning, slow & expensive.' },
+  { id: 'azure-deployment',      name: 'Your Azure deployment', provider: 'azure-openai', description: 'Uses the deployment name from your Azure key config.' },
 ];
 
 export const IMAGE_MODELS: ModelDef[] = [
@@ -45,6 +52,9 @@ export const IMAGE_MODELS: ModelDef[] = [
   { id: 'fal-ai/flux/dev/image-to-image',  name: 'FLUX Img-to-Img',    provider: 'fal',    description: 'Re-styles a reference frame.', supportsReference: true },
   { id: 'fal-ai/ideogram/v2',              name: 'Ideogram v2',        provider: 'fal',    description: 'Best for embedded title text.', supportsText: true },
   { id: 'fal-ai/recraft-v3',               name: 'Recraft v3',         provider: 'fal',    description: 'Vector & illustration styles.' },
+  { id: 'gpt-image-1',                     name: 'GPT Image 1',        provider: 'openai', description: 'OpenAI\'s newest image model — renders text well.', supportsText: true },
+  { id: 'dall-e-3',                        name: 'DALL·E 3',           provider: 'openai', description: 'Classic OpenAI image generator.' },
+  { id: 'azure-deployment-image',          name: 'Your Azure deployment', provider: 'azure-openai', description: 'Uses the deployment name from your Azure key config (DALL·E 3 or gpt-image-1).' },
 ];
 
 export const VIDEO_MODELS: ModelDef[] = [

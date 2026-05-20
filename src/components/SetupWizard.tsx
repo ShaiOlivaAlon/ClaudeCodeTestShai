@@ -32,10 +32,11 @@ const DEFAULT_KEYS: ApiKeys = {
 
 function placeholderFor(p: Provider): string {
   switch (p) {
-    case 'google':    return 'AIza…';
-    case 'anthropic': return 'sk-ant-…';
-    case 'fal':       return 'fal-…';
-    case 'openai':    return 'sk-…';
+    case 'google':       return 'AIza…';
+    case 'anthropic':    return 'sk-ant-…';
+    case 'fal':          return 'fal-…';
+    case 'openai':       return 'sk-…';
+    case 'azure-openai': return 'Azure API key';
   }
 }
 
@@ -51,10 +52,19 @@ export function SetupWizard() {
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState<Partial<Record<Role, boolean>>>({});
 
-  function setRole(role: Role, patch: { provider?: Provider; key?: string }) {
+  function setRole(role: Role, patch: Partial<{ provider: Provider; key: string; endpoint: string; deployment: string; apiVersion: string }>) {
     setKeys((prev) => {
       const current = prev[role] ?? DEFAULT_KEYS[role]!;
-      return { ...prev, [role]: { provider: patch.provider ?? current.provider, key: patch.key ?? current.key } };
+      return {
+        ...prev,
+        [role]: {
+          provider: patch.provider ?? current.provider,
+          key: patch.key ?? current.key,
+          endpoint: patch.endpoint ?? current.endpoint,
+          deployment: patch.deployment ?? current.deployment,
+          apiVersion: patch.apiVersion ?? current.apiVersion,
+        },
+      };
     });
     setResults((r) => ({ ...r, [role]: undefined }));
   }
@@ -62,7 +72,13 @@ export function SetupWizard() {
   function copyFromText(role: Role) {
     const src = keys.text;
     if (!src?.key) return;
-    setRole(role, { provider: src.provider, key: src.key });
+    setRole(role, {
+      provider: src.provider,
+      key: src.key,
+      endpoint: src.endpoint,
+      deployment: src.deployment,
+      apiVersion: src.apiVersion,
+    });
   }
 
   async function test() {
@@ -71,7 +87,11 @@ export function SetupWizard() {
     const entries = (['text', 'image', 'video'] as Role[]).map(async (role) => {
       const r = keys[role];
       if (!r?.key) return [role, undefined] as const;
-      const ok = await pingProvider(r.provider, r.key);
+      const ok = await pingProvider(r.provider, r.key, {
+        endpoint: r.endpoint,
+        deployment: r.deployment,
+        apiVersion: r.apiVersion,
+      });
       return [role, ok] as const;
     });
     const settled = await Promise.all(entries);
@@ -86,12 +106,21 @@ export function SetupWizard() {
     const textProv = keys.text?.provider ?? 'google';
     const imageProv = keys.image?.provider ?? 'google';
     const videoProv = keys.video?.provider ?? 'google';
+    const pack = (k: typeof keys.text) => k?.key.trim()
+      ? {
+          provider: k.provider,
+          key: k.key.trim(),
+          ...(k.endpoint   ? { endpoint:   k.endpoint.trim() }   : {}),
+          ...(k.deployment ? { deployment: k.deployment.trim() } : {}),
+          ...(k.apiVersion ? { apiVersion: k.apiVersion.trim() } : {}),
+        }
+      : undefined;
     const next = {
       ...state.settings,
       apiKeys: {
-        text:  keys.text?.key.trim()  ? { provider: textProv,  key: keys.text!.key.trim()  } : undefined,
-        image: keys.image?.key.trim() ? { provider: imageProv, key: keys.image!.key.trim() } : undefined,
-        video: keys.video?.key.trim() ? { provider: videoProv, key: keys.video!.key.trim() } : undefined,
+        text:  pack(keys.text  ? { ...keys.text,  provider: textProv  } : undefined),
+        image: pack(keys.image ? { ...keys.image, provider: imageProv } : undefined),
+        video: pack(keys.video ? { ...keys.video, provider: videoProv } : undefined),
       },
       defaultTextModel:  defaultModelFor(TEXT_MODELS,  textProv),
       defaultImageModel: defaultModelFor(IMAGE_MODELS, imageProv),
@@ -131,6 +160,7 @@ export function SetupWizard() {
         {ROLE_CONFIG.map(({ role, label, hint, providers }) => {
           const r = keys[role] ?? DEFAULT_KEYS[role]!;
           const showCopy = role !== 'text' && Boolean(keys.text?.key);
+          const isAzure = r.provider === 'azure-openai';
           return (
             <Field key={role} label={label} hint={hint}>
               <div className="flex items-center gap-2">
@@ -158,6 +188,25 @@ export function SetupWizard() {
                 )}
                 <KeyResult ok={results[role]} />
               </div>
+              {isAzure && (
+                <div className="mt-2 grid grid-cols-1 gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 sm:grid-cols-3">
+                  <TextInput
+                    value={r.endpoint ?? ''}
+                    onChange={(v) => setRole(role, { endpoint: v })}
+                    placeholder="Endpoint: https://your-resource.openai.azure.com"
+                  />
+                  <TextInput
+                    value={r.deployment ?? ''}
+                    onChange={(v) => setRole(role, { deployment: v })}
+                    placeholder="Deployment name"
+                  />
+                  <TextInput
+                    value={r.apiVersion ?? ''}
+                    onChange={(v) => setRole(role, { apiVersion: v })}
+                    placeholder="API version (default 2024-10-21)"
+                  />
+                </div>
+              )}
             </Field>
           );
         })}

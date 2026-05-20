@@ -26,10 +26,11 @@ const ROLE_CONFIG: RoleConfig[] = [
 
 function placeholderFor(p: Provider): string {
   switch (p) {
-    case 'google':    return 'AIza…';
-    case 'anthropic': return 'sk-ant-…';
-    case 'fal':       return 'fal-…';
-    case 'openai':    return 'sk-…';
+    case 'google':       return 'AIza…';
+    case 'anthropic':    return 'sk-ant-…';
+    case 'fal':          return 'fal-…';
+    case 'openai':       return 'sk-…';
+    case 'azure-openai': return 'Azure API key';
   }
 }
 
@@ -42,12 +43,18 @@ export function SettingsModal() {
 
   function close() { dispatch({ type: 'ui/openSettings', open: false }); }
 
-  function setRole(role: Role, patch: { provider?: Provider; key?: string }) {
+  function setRole(role: Role, patch: Partial<{ provider: Provider; key: string; endpoint: string; deployment: string; apiVersion: string }>) {
     setDraft((d) => {
       const current = d.apiKeys[role] ?? { provider: 'google' as Provider, key: '' };
       const next: ApiKeys = {
         ...d.apiKeys,
-        [role]: { provider: patch.provider ?? current.provider, key: patch.key ?? current.key },
+        [role]: {
+          provider: patch.provider ?? current.provider,
+          key: patch.key ?? current.key,
+          endpoint: patch.endpoint ?? current.endpoint,
+          deployment: patch.deployment ?? current.deployment,
+          apiVersion: patch.apiVersion ?? current.apiVersion,
+        },
       };
       const out = { ...d, apiKeys: next };
       // If the role's provider changed, snap its default model to one supported by that provider.
@@ -64,14 +71,28 @@ export function SettingsModal() {
   function copyFromText(role: Role) {
     const src = draft.apiKeys.text;
     if (!src?.key) return;
-    setRole(role, { provider: src.provider, key: src.key });
+    setRole(role, {
+      provider: src.provider,
+      key: src.key,
+      endpoint: src.endpoint,
+      deployment: src.deployment,
+      apiVersion: src.apiVersion,
+    });
   }
 
   function save() {
     const cleaned: ApiKeys = {};
     for (const role of ['text', 'image', 'video'] as Role[]) {
       const r = draft.apiKeys[role];
-      if (r?.key?.trim()) cleaned[role] = { provider: r.provider, key: r.key.trim() };
+      if (r?.key?.trim()) {
+        cleaned[role] = {
+          provider: r.provider,
+          key: r.key.trim(),
+          ...(r.endpoint   ? { endpoint:   r.endpoint.trim() }   : {}),
+          ...(r.deployment ? { deployment: r.deployment.trim() } : {}),
+          ...(r.apiVersion ? { apiVersion: r.apiVersion.trim() } : {}),
+        };
+      }
     }
     const next = { ...draft, apiKeys: cleaned, setupComplete: true };
     saveSettings(next);
@@ -86,7 +107,11 @@ export function SettingsModal() {
     const entries = (['text', 'image', 'video'] as Role[]).map(async (role) => {
       const r = draft.apiKeys[role];
       if (!r?.key) return [role, undefined] as const;
-      const ok = await pingProvider(r.provider, r.key);
+      const ok = await pingProvider(r.provider, r.key, {
+        endpoint: r.endpoint,
+        deployment: r.deployment,
+        apiVersion: r.apiVersion,
+      });
       return [role, ok] as const;
     });
     const settled = await Promise.all(entries);
@@ -120,6 +145,7 @@ export function SettingsModal() {
           {ROLE_CONFIG.map(({ role, label, providers }) => {
             const r = draft.apiKeys[role] ?? { provider: 'google' as Provider, key: '' };
             const showCopy = role !== 'text' && Boolean(draft.apiKeys.text?.key);
+            const isAzure = r.provider === 'azure-openai';
             return (
               <Field key={role} label={label}>
                 <div className="flex items-center gap-2">
@@ -147,6 +173,25 @@ export function SettingsModal() {
                   )}
                   <KeyResult ok={results[role]} />
                 </div>
+                {isAzure && (
+                  <div className="mt-2 grid grid-cols-1 gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 sm:grid-cols-3">
+                    <TextInput
+                      value={r.endpoint ?? ''}
+                      onChange={(v) => setRole(role, { endpoint: v })}
+                      placeholder="https://your-resource.openai.azure.com"
+                    />
+                    <TextInput
+                      value={r.deployment ?? ''}
+                      onChange={(v) => setRole(role, { deployment: v })}
+                      placeholder="Deployment name"
+                    />
+                    <TextInput
+                      value={r.apiVersion ?? ''}
+                      onChange={(v) => setRole(role, { apiVersion: v })}
+                      placeholder="API version (default 2024-10-21)"
+                    />
+                  </div>
+                )}
               </Field>
             );
           })}

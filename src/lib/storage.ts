@@ -65,8 +65,16 @@ function migrateApiKeys(raw: unknown): ApiKeys {
   if (looksRoleBased) {
     const out: ApiKeys = {};
     for (const role of ['text', 'image', 'video'] as const) {
-      const v = r[role] as { provider?: string; key?: string } | undefined;
-      if (v?.key && v.provider) out[role] = { provider: v.provider as any, key: v.key };
+      const v = r[role] as { provider?: string; key?: string; endpoint?: string; deployment?: string; apiVersion?: string } | undefined;
+      if (v?.key && v.provider) {
+        out[role] = {
+          provider: v.provider as any,
+          key: v.key,
+          ...(v.endpoint   ? { endpoint:   v.endpoint }   : {}),
+          ...(v.deployment ? { deployment: v.deployment } : {}),
+          ...(v.apiVersion ? { apiVersion: v.apiVersion } : {}),
+        };
+      }
     }
     return out;
   }

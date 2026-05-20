@@ -65,13 +65,19 @@ export interface Generation {
   referenceAssetIds: string[];
 }
 
-export type Provider = 'google' | 'anthropic' | 'fal' | 'openai';
+export type Provider = 'google' | 'anthropic' | 'fal' | 'openai' | 'azure-openai';
 
 export type Role = 'text' | 'image' | 'video';
 
 export interface RoleKey {
   provider: Provider;
   key: string;
+  /** Azure OpenAI only: resource endpoint, e.g. https://my-resource.openai.azure.com */
+  endpoint?: string;
+  /** Azure OpenAI only: deployment name (the user names this when they deploy a model). */
+  deployment?: string;
+  /** Azure OpenAI only: API version, e.g. 2024-10-21. */
+  apiVersion?: string;
 }
 
 export interface ApiKeys {

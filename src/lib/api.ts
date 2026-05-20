@@ -60,6 +60,30 @@ function extractJson(text: string): any {
   return JSON.parse(slice);
 }
 
+/** Closest size OpenAI image models accept. */
+function openaiImageSize(r: AspectRatio, model: string): string {
+  const portrait  = r === '9:16' || r === '4:5' || r === '3:4' || r === '2:3';
+  const landscape = r === '16:9' || r === '5:4' || r === '4:3' || r === '3:2';
+  if (model.startsWith('gpt-image')) {
+    if (portrait)  return '1024x1536';
+    if (landscape) return '1536x1024';
+    return '1024x1024';
+  }
+  // dall-e-3
+  if (portrait)  return '1024x1792';
+  if (landscape) return '1792x1024';
+  return '1024x1024';
+}
+
+function requireAzureFields(r: RoleKey): { endpoint: string; deployment: string; apiVersion: string } {
+  const endpoint = r.endpoint?.trim().replace(/\/$/, '');
+  const deployment = r.deployment?.trim();
+  const apiVersion = r.apiVersion?.trim() || '2024-10-21';
+  if (!endpoint) throw new Error('Azure OpenAI: endpoint URL missing. Open Settings to set it.');
+  if (!deployment) throw new Error('Azure OpenAI: deployment name missing. Open Settings to set it.');
+  return { endpoint, deployment, apiVersion };
+}
+
 // ----- Anthropic -----------------------------------------------------------
 
 const ANTHROPIC_MODEL_MAP: Record<string, string> = {
@@ -98,6 +122,130 @@ async function anthropicMessage(opts: {
   const data = await res.json();
   const blocks = (data.content ?? []) as { type: string; text?: string }[];
   return blocks.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n').trim();
+}
+
+// ----- OpenAI --------------------------------------------------------------
+
+async function openaiMessage(opts: {
+  apiKey: string;
+  model: string;
+  system: string;
+  user: string;
+  maxTokens?: number;
+}): Promise<string> {
+  const isReasoning = /^o\d/.test(opts.model);
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    messages: [
+      // o1/o3 ignore system role but accept it without erroring.
+      { role: 'system', content: opts.system },
+      { role: 'user', content: opts.user },
+    ],
+  };
+  // Reasoning models use max_completion_tokens; chat models accept either.
+  body[isReasoning ? 'max_completion_tokens' : 'max_tokens'] = opts.maxTokens ?? 4096;
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${opts.apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OpenAI API error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content ?? '').trim();
+}
+
+async function openaiImageGenerate(opts: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+}): Promise<{ url: string }> {
+  const size = openaiImageSize(opts.aspectRatio, opts.model);
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    prompt: opts.prompt,
+    size,
+    n: 1,
+  };
+  // dall-e-3 supports response_format; gpt-image-1 always returns b64.
+  if (opts.model === 'dall-e-3') body.response_format = 'b64_json';
+
+  const res = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${opts.apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OpenAI Images error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  const item = data.data?.[0] ?? {};
+  if (item.b64_json) return { url: `data:image/png;base64,${item.b64_json}` };
+  if (item.url) return { url: item.url };
+  throw new Error('OpenAI Images returned no result.');
+}
+
+// ----- Azure OpenAI --------------------------------------------------------
+
+async function azureOpenAIMessage(opts: {
+  apiKey: string;
+  endpoint: string;
+  deployment: string;
+  apiVersion: string;
+  system: string;
+  user: string;
+  maxTokens?: number;
+}): Promise<string> {
+  const url = `${opts.endpoint}/openai/deployments/${encodeURIComponent(opts.deployment)}/chat/completions?api-version=${encodeURIComponent(opts.apiVersion)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'api-key': opts.apiKey },
+    body: JSON.stringify({
+      messages: [
+        { role: 'system', content: opts.system },
+        { role: 'user', content: opts.user },
+      ],
+      max_tokens: opts.maxTokens ?? 4096,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Azure OpenAI error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content ?? '').trim();
+}
+
+async function azureOpenAIImageGenerate(opts: {
+  apiKey: string;
+  endpoint: string;
+  deployment: string;
+  apiVersion: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+}): Promise<{ url: string }> {
+  // Assume the user's Azure deployment is DALL·E 3 style (Azure's most common image deployment).
+  const size = openaiImageSize(opts.aspectRatio, 'dall-e-3');
+  const url = `${opts.endpoint}/openai/deployments/${encodeURIComponent(opts.deployment)}/images/generations?api-version=${encodeURIComponent(opts.apiVersion)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'api-key': opts.apiKey },
+    body: JSON.stringify({ prompt: opts.prompt, size, n: 1 }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Azure OpenAI Images error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  const item = data.data?.[0] ?? {};
+  if (item.b64_json) return { url: `data:image/png;base64,${item.b64_json}` };
+  if (item.url) return { url: item.url };
+  throw new Error('Azure OpenAI Images returned no result.');
 }
 
 // ----- Google (Gemini / Imagen / Veo) --------------------------------------
@@ -405,6 +553,23 @@ async function falGenerateVideo(opts: {
 
 // ----- Provider-dispatched public API --------------------------------------
 
+async function dispatchText(role: RoleKey, model: string, system: string, user: string, maxTokens: number): Promise<string> {
+  switch (role.provider) {
+    case 'google':
+      return geminiMessage({ apiKey: role.key, model, system, user, maxTokens });
+    case 'anthropic':
+      return anthropicMessage({ apiKey: role.key, model, system, user, maxTokens });
+    case 'openai':
+      return openaiMessage({ apiKey: role.key, model, system, user, maxTokens });
+    case 'azure-openai': {
+      const az = requireAzureFields(role);
+      return azureOpenAIMessage({ apiKey: role.key, ...az, system, user, maxTokens });
+    }
+    default:
+      throw new Error(`Provider ${role.provider} cannot generate text.`);
+  }
+}
+
 export async function generateSuggestions(opts: {
   apiKeys: ApiKeys;
   textModel: string;
@@ -418,9 +583,7 @@ export async function generateSuggestions(opts: {
 
   const system = buildSuggestionSystemPrompt();
   const user = buildSuggestionUserPrompt(opts.brief);
-  const raw = role.provider === 'google'
-    ? await geminiMessage({ apiKey: role.key, model: opts.textModel, system, user, maxTokens: 6000 })
-    : await anthropicMessage({ apiKey: role.key, model: opts.textModel, system, user, maxTokens: 6000 });
+  const raw = await dispatchText(role, opts.textModel, system, user, 6000);
 
   const parsed = extractJson(raw) as { ideas: { title: string; description: string; prompt: string; tags?: string[] }[] };
   return parsed.ideas.map((i, idx) => ({
@@ -440,9 +603,7 @@ export async function enhancePrompt(opts: {
 }): Promise<string> {
   const role = getRole(opts.apiKeys, 'text');
   const system = buildImagePromptEnhancer();
-  const out = role.provider === 'google'
-    ? await geminiMessage({ apiKey: role.key, model: opts.textModel, system, user: opts.prompt, maxTokens: 1500 })
-    : await anthropicMessage({ apiKey: role.key, model: opts.textModel, system, user: opts.prompt, maxTokens: 1500 });
+  const out = await dispatchText(role, opts.textModel, system, opts.prompt, 1500);
   return out.trim();
 }
 
@@ -476,6 +637,15 @@ export async function generateImage(opts: ImageGenInput): Promise<{ url: string 
       aspectRatio: opts.aspectRatio,
       referenceDataUrls: opts.referenceDataUrls,
     });
+  }
+
+  if (role.provider === 'openai') {
+    return openaiImageGenerate({ apiKey: role.key, model: opts.model, prompt: opts.prompt, aspectRatio: opts.aspectRatio });
+  }
+
+  if (role.provider === 'azure-openai') {
+    const az = requireAzureFields(role);
+    return azureOpenAIImageGenerate({ apiKey: role.key, ...az, prompt: opts.prompt, aspectRatio: opts.aspectRatio });
   }
 
   let referenceUrls: string[] = [];
@@ -542,7 +712,7 @@ export function makeAnimatePrompt(suggestion: { title: string; description: stri
 
 // ----- API key validators -------------------------------------------------
 
-export async function pingProvider(provider: Provider, apiKey: string): Promise<boolean> {
+export async function pingProvider(provider: Provider, apiKey: string, extra?: { endpoint?: string; deployment?: string; apiVersion?: string }): Promise<boolean> {
   try {
     if (provider === 'google') {
       const res = await fetch(`${GOOGLE_BASE}/models?key=${encodeURIComponent(apiKey)}&pageSize=1`);
@@ -576,6 +746,16 @@ export async function pingProvider(provider: Provider, apiKey: string): Promise<
     if (provider === 'openai') {
       const res = await fetch('https://api.openai.com/v1/models', {
         headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      return res.ok;
+    }
+    if (provider === 'azure-openai') {
+      const endpoint = extra?.endpoint?.trim().replace(/\/$/, '');
+      const apiVersion = extra?.apiVersion?.trim() || '2024-10-21';
+      if (!endpoint) return false;
+      // List deployments — works with just the resource key, no deployment name needed.
+      const res = await fetch(`${endpoint}/openai/deployments?api-version=${encodeURIComponent(apiVersion)}`, {
+        headers: { 'api-key': apiKey },
       });
       return res.ok;
     }
