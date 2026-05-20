@@ -1,0 +1,53 @@
+name: GoTo Holiday Car Checker
+
+on:
+  schedule:
+    # Runs every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_alert:
+        description: 'Send a test alert regardless of car count'
+        type: boolean
+        default: false
+      auto_rent_enabled:
+        description: 'Enable auto-rent for this run'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run (skip real GoTo API calls)'
+        type: boolean
+        default: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: checker/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r checker/requirements.txt
+
+      - name: Run checker
+        working-directory: checker
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOTO_EMAIL: ${{ secrets.GOTO_EMAIL }}
+          GOTO_PASSWORD: ${{ secrets.GOTO_PASSWORD }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          # Feature flags (workflow_dispatch inputs override scheduled defaults)
+          AUTO_RENT_ENABLED: ${{ inputs.auto_rent_enabled || 'false' }}
+          GOTO_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          FORCE_ALERT: ${{ inputs.force_alert || 'false' }}
