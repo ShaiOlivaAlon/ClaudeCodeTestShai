@@ -149,8 +149,9 @@ function GalleryCard({ g }: { g: Generation }) {
           </div>
         )}
         {g.video?.status === 'error' && (
-          <div className="absolute inset-x-0 bottom-0 bg-rose-900/80 px-2 py-1 text-[10px] text-rose-100">
-            Video failed: {shortText(g.video.error ?? '', 80)}
+          <div className="absolute inset-x-0 bottom-0 max-h-[60%] overflow-y-auto bg-rose-900/85 px-2 py-1.5 text-[10px] leading-snug text-rose-100">
+            <div className="mb-0.5 font-semibold">Video failed — tap card to see full error</div>
+            <div className="whitespace-pre-wrap break-words">{g.video.error ?? 'unknown error'}</div>
           </div>
         )}
         {g.video?.status === 'done' && (

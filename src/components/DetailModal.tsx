@@ -200,6 +200,12 @@ function DetailModalBody({
               </div>
             )}
 
+            {g.video?.status === 'error' && (
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-rose-300">Video error</div>
+                <p className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-rose-500/50 bg-rose-950/40 p-2 text-[11px] text-rose-100">{g.video.error ?? 'unknown error'}</p>
+              </div>
+            )}
             <div>
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">Prompt</div>
               <p className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-700 bg-ink-900 p-2 text-xs text-ink-100">{g.prompt}</p>

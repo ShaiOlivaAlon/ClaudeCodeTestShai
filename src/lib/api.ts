@@ -375,7 +375,6 @@ async function veoGenerate(opts: {
         aspectRatio: googleVideoAspect(opts.aspectRatio),
         durationSeconds: 8,
         personGeneration: 'allow_adult',
-        numberOfVideos: 1,
       },
     }),
   });
