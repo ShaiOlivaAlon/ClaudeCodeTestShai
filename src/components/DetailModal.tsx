@@ -65,7 +65,12 @@ function DetailModalBody({
   const usedAssets = state.assets.filter((a) => g.referenceAssetIds.includes(a.id));
 
   async function animate() {
-    if (!g.imageUrl || !state.settings.apiKeys.video?.key) return;
+    if (!g.imageUrl) return;
+    if (!state.settings.apiKeys.video?.key) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add a Video API key in Settings to animate.' } });
+      dispatch({ type: 'ui/openSettings', open: true });
+      return;
+    }
     setBusy(true);
     const queued: Generation = {
       ...g,
@@ -76,6 +81,7 @@ function DetailModalBody({
       },
     };
     dispatch({ type: 'generations/upsert', generation: queued });
+    dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Animating… Veo can take a few minutes. The card will update when it\'s ready.' } });
     try {
       const { url } = await generateVideo({
         apiKeys: state.settings.apiKeys,

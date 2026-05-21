@@ -58,6 +58,7 @@ function GalleryCard({ g }: { g: Generation }) {
     const animPrompt = makeAnimatePrompt({ title: g.title, description: '', prompt: g.prompt });
     const queued: Generation = { ...g, video: { status: 'generating', model: state.brief.videoModel, prompt: animPrompt } };
     dispatch({ type: 'generations/upsert', generation: queued });
+    dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Animating… Veo can take a few minutes. The card will update when it\'s ready.' } });
     setBusy(true);
     try {
       const { url } = await generateVideo({
@@ -142,9 +143,15 @@ function GalleryCard({ g }: { g: Generation }) {
           {g.aspectRatio}
         </span>
         {g.video?.status === 'generating' && (
-          <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
-            <Spinner size={10} /> animating
-          </span>
+          <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-black/80 py-1.5 text-[11px] font-semibold text-white">
+            <Spinner size={12} className="text-brand-300" />
+            <span>Animating… (Veo, can take minutes)</span>
+          </div>
+        )}
+        {g.video?.status === 'error' && (
+          <div className="absolute inset-x-0 bottom-0 bg-rose-900/80 px-2 py-1 text-[10px] text-rose-100">
+            Video failed: {shortText(g.video.error ?? '', 80)}
+          </div>
         )}
         {g.video?.status === 'done' && (
           <span className="absolute right-1.5 top-1.5 rounded-md bg-emerald-500/90 px-1.5 py-0.5 text-[10px] font-bold text-white">VIDEO</span>
@@ -155,7 +162,7 @@ function GalleryCard({ g }: { g: Generation }) {
         <div className="truncate text-xs font-semibold text-white">{g.title}</div>
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 flex translate-y-full items-center justify-between gap-1 border-t border-ink-700 bg-ink-900/95 p-1.5 transition-transform group-hover:translate-y-0">
+      <div className="absolute inset-x-0 bottom-0 flex translate-y-0 items-center justify-between gap-1 border-t border-ink-700 bg-ink-900/95 p-1.5 transition-transform lg:translate-y-full lg:group-hover:translate-y-0">
         <div className="flex gap-1">
           <button onClick={() => dispatch({ type: 'ui/openDetail', id: g.id })} title="Open" className="rounded-md p-1.5 text-ink-200 hover:bg-ink-700 hover:text-white">
             <Maximize2 size={14} />
