@@ -1,9 +1,22 @@
 name: GoTo Holiday Car Checker
 
 on:
+  # Runs every 30 minutes — only fires on the default branch on GitHub.
+  # Merge this branch to main/master to activate the schedule.
   schedule:
-    # Runs every 30 minutes
     - cron: '*/30 * * * *'
+
+  # Runs on every push to this branch (useful for testing before merging).
+  push:
+    branches:
+      - claude/gotogo-holiday-car-checker-qEAQs
+      - main
+      - master
+    paths:
+      - 'checker/**'
+      - '.github/workflows/holiday_car_checker.yml'
+
+  # Manual trigger with optional feature-flag overrides.
   workflow_dispatch:
     inputs:
       force_alert:
@@ -15,7 +28,7 @@ on:
         type: boolean
         default: false
       dry_run:
-        description: 'Dry run (skip real GoTo API calls)'
+        description: 'Dry run (skip real GoTo API calls, use mock cars)'
         type: boolean
         default: true
 
@@ -28,7 +41,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check required secrets are configured
+        run: |
+          missing=()
+          [ -z "$TELEGRAM_BOT_TOKEN" ] && missing+=("TELEGRAM_BOT_TOKEN")
+          [ -z "$TELEGRAM_CHAT_ID" ]   && missing+=("TELEGRAM_CHAT_ID")
+          [ -z "$GIST_TOKEN" ]         && missing+=("GIST_TOKEN")
+          [ -z "$GIST_ID" ]            && missing+=("GIST_ID")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::warning::Secrets not configured yet: ${missing[*]}"
+            echo "Follow docs/setup.md to add them under Settings → Secrets → Actions."
+            echo "SECRETS_READY=false" >> "$GITHUB_ENV"
+          else
+            echo "SECRETS_READY=true" >> "$GITHUB_ENV"
+          fi
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+
       - name: Set up Python
+        if: env.SECRETS_READY == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -36,9 +70,11 @@ jobs:
           cache-dependency-path: checker/requirements.txt
 
       - name: Install dependencies
+        if: env.SECRETS_READY == 'true'
         run: pip install -r checker/requirements.txt
 
       - name: Run checker
+        if: env.SECRETS_READY == 'true'
         working-directory: checker
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -47,7 +83,6 @@ jobs:
           GOTO_PASSWORD: ${{ secrets.GOTO_PASSWORD }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
-          # Feature flags (workflow_dispatch inputs override scheduled defaults)
           AUTO_RENT_ENABLED: ${{ inputs.auto_rent_enabled || 'false' }}
           GOTO_DRY_RUN: ${{ inputs.dry_run || 'false' }}
           FORCE_ALERT: ${{ inputs.force_alert || 'false' }}

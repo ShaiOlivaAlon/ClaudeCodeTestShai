@@ -15,6 +15,7 @@ Flow:
   6. Check for expired unconfirmed reservations → cancel + notify
   7. Save state back to Gist
 """
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -29,9 +30,27 @@ from config import (
     GOTO_DRY_RUN, FORCE_ALERT,
 )
 
+REQUIRED_SECRETS = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "GIST_TOKEN", "GIST_ID"]
+
+
+def _check_secrets() -> bool:
+    missing = [k for k in REQUIRED_SECRETS if not os.environ.get(k)]
+    if missing:
+        print(
+            f"⚠️  Required secrets not configured: {', '.join(missing)}\n"
+            "Follow docs/setup.md to add them in GitHub → Settings → Secrets → Actions.\n"
+            "Skipping this run.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
 
 def run() -> None:
     print(f"[{datetime.now(timezone.utc).isoformat()}] GoTo checker starting…")
+
+    if not _check_secrets():
+        sys.exit(0)  # Exit 0 so GitHub doesn't mark it as a failure during setup
 
     # ── 1. Load state ─────────────────────────────────────────────────────────
     state = st.load()
