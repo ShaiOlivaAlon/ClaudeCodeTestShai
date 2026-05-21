@@ -60,15 +60,17 @@ export function App() {
       <div className="flex h-[100dvh] flex-col overflow-hidden">
         <Header />
 
-        {/* Desktop: 3-column grid. Mobile: single panel switched by the bottom nav. */}
-        <main className="grid min-h-0 flex-1 lg:grid-cols-[280px_minmax(0,1.4fr)_minmax(0,1fr)]">
-          <div className={cls('h-full min-h-0', mobileTab === 'library' ? 'block' : 'hidden', 'lg:block')}>
+        {/* Desktop: 3-column grid. Mobile: single panel switched by the bottom nav.
+            grid-cols-1 (= minmax(0, 1fr)) is critical — without it, a grid item's default
+            min-width: auto lets long content force the column wider than the viewport. */}
+        <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1.4fr)_minmax(0,1fr)]">
+          <div className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'library' ? 'block' : 'hidden', 'lg:block')}>
             <AssetLibrary />
           </div>
-          <div className={cls('h-full min-h-0', mobileTab === 'brief' ? 'block' : 'hidden', 'lg:block')}>
+          <div className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'brief' ? 'block' : 'hidden', 'lg:block')}>
             <BriefBuilder />
           </div>
-          <div className={cls('h-full min-h-0', mobileTab === 'gallery' ? 'block' : 'hidden', 'lg:block')}>
+          <div className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'gallery' ? 'block' : 'hidden', 'lg:block')}>
             <Gallery />
           </div>
         </main>

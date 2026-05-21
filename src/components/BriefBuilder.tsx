@@ -210,17 +210,17 @@ export function BriefBuilder() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-ink-800 px-5 py-3">
-        <div>
+      <div className="flex items-center justify-between gap-3 border-b border-ink-800 px-3 py-2 sm:px-5 sm:py-3">
+        <div className="min-w-0">
           <div className="font-display text-sm font-semibold uppercase tracking-wider text-ink-100">Brief</div>
-          <div className="text-xs text-ink-400">Configure once, generate dozens of variations.</div>
+          <div className="truncate text-xs text-ink-400">Configure once, generate dozens of variations.</div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-ink-300">
+        <div className="hidden shrink-0 items-center gap-2 text-xs text-ink-300 sm:flex">
           <span>{includedAssets.length} assets</span>·<span>{brief.aspectRatios.length} ratios</span>·<span>{brief.titles.length} titles</span>
         </div>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+      <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4">
         <PresetsBar />
 
         <Card>
@@ -261,7 +261,7 @@ export function BriefBuilder() {
 
         <Card>
           <SectionHeader title="Aspect ratios" subtitle="Each ticked ratio multiplies your output set." />
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {ASPECT_RATIOS.map((r) => {
               const active = brief.aspectRatios.includes(r.id);
               return (
