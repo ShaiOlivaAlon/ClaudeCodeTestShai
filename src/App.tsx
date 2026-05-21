@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Crown, LayoutGrid, Wand2 } from 'lucide-react';
 import { initialState, reducer, StoreContext } from './state/store';
 import { listAssets, listBriefPresets, listGenerations, loadSettings } from './lib/storage';
@@ -9,10 +10,16 @@ import { Gallery } from './components/Gallery';
 import { SetupWizard } from './components/SetupWizard';
 import { SettingsModal } from './components/SettingsModal';
 import { DetailModal } from './components/DetailModal';
-import { Toast } from './components/ui';
+import { EditMaskModal } from './components/EditMaskModal';
+import { ToastStack } from './components/ui';
 import { cls } from './lib/utils';
 
 type MobileTab = 'library' | 'brief' | 'gallery';
+
+const PANEL_VARIANTS = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+};
 
 export function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -32,7 +39,6 @@ export function App() {
       dispatch({ type: 'generations/set', generations });
       dispatch({ type: 'briefPresets/set', presets });
 
-      // Push defaults into the brief if the user has changed model defaults in settings.
       dispatch({
         type: 'brief/patch',
         patch: {
@@ -48,13 +54,6 @@ export function App() {
     })();
   }, []);
 
-  // Auto-dismiss toast.
-  useEffect(() => {
-    if (!state.ui.toast) return;
-    const t = setTimeout(() => dispatch({ type: 'ui/toast', toast: null }), 4500);
-    return () => clearTimeout(t);
-  }, [state.ui.toast]);
-
   return (
     <StoreContext.Provider value={{ state, dispatch }}>
       <div className="flex h-[100dvh] flex-col overflow-hidden">
@@ -64,15 +63,33 @@ export function App() {
             grid-cols-1 (= minmax(0, 1fr)) is critical — without it, a grid item's default
             min-width: auto lets long content force the column wider than the viewport. */}
         <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1.4fr)_minmax(0,1fr)]">
-          <div className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'library' ? 'block' : 'hidden', 'lg:block')}>
+          <motion.div
+            variants={PANEL_VARIANTS}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.05, duration: 0.35, ease: 'easeOut' }}
+            className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'library' ? 'block' : 'hidden', 'lg:block')}
+          >
             <AssetLibrary />
-          </div>
-          <div className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'brief' ? 'block' : 'hidden', 'lg:block')}>
+          </motion.div>
+          <motion.div
+            variants={PANEL_VARIANTS}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.12, duration: 0.35, ease: 'easeOut' }}
+            className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'brief' ? 'block' : 'hidden', 'lg:block')}
+          >
             <BriefBuilder />
-          </div>
-          <div className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'gallery' ? 'block' : 'hidden', 'lg:block')}>
+          </motion.div>
+          <motion.div
+            variants={PANEL_VARIANTS}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.2, duration: 0.35, ease: 'easeOut' }}
+            className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'gallery' ? 'block' : 'hidden', 'lg:block')}
+          >
             <Gallery />
-          </div>
+          </motion.div>
         </main>
 
         <MobileTabBar
@@ -85,7 +102,8 @@ export function App() {
         <SetupWizard />
         <SettingsModal />
         <DetailModal />
-        <Toast toast={state.ui.toast} onClose={() => dispatch({ type: 'ui/toast', toast: null })} />
+        <EditMaskModal />
+        <ToastStack toasts={state.ui.toasts} onDismiss={(id) => dispatch({ type: 'ui/dismissToast', id })} />
       </div>
     </StoreContext.Provider>
   );
@@ -105,7 +123,13 @@ function MobileTabBar({
     { id: 'gallery', label: 'Gallery', icon: <LayoutGrid size={18} />, badge: renderCount },
   ];
   return (
-    <nav className="grid grid-cols-3 border-t border-ink-800 bg-ink-950 lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <motion.nav
+      initial={{ y: 60, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ delay: 0.3, type: 'spring', stiffness: 320, damping: 30 }}
+      className="grid grid-cols-3 border-t border-ink-800 bg-ink-950 lg:hidden"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
       {tabs.map((t) => {
         const active = tab === t.id;
         return (
@@ -113,7 +137,7 @@ function MobileTabBar({
             key={t.id}
             onClick={() => onChange(t.id)}
             className={cls(
-              'flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition',
+              'flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition active:scale-95',
               active ? 'text-white' : 'text-ink-400 hover:text-ink-100'
             )}
           >
@@ -130,6 +154,6 @@ function MobileTabBar({
           </button>
         );
       })}
-    </nav>
+    </motion.nav>
   );
 }

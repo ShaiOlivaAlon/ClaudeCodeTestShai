@@ -1,6 +1,13 @@
 import { createContext, useContext } from 'react';
 import type { Asset, Brief, BriefPreset, Generation, Settings, Suggestion } from '../types';
 
+export interface ToastItem {
+  id: string;
+  kind: 'info' | 'success' | 'error';
+  message: string;
+  createdAt: number;
+}
+
 export interface AppState {
   settings: Settings;
   assets: Asset[];
@@ -14,8 +21,10 @@ export interface AppState {
     settingsOpen: boolean;
     /** Generation id whose details modal is open; null = closed. */
     detailGenerationId: string | null;
-    /** Status banner for cross-cutting notifications. */
-    toast: { kind: 'info' | 'success' | 'error'; message: string } | null;
+    /** Generation id whose mask-edit modal is open; null = closed. */
+    editMaskGenerationId: string | null;
+    /** Stack of active toast notifications. */
+    toasts: ToastItem[];
     /** True while suggestions are loading. */
     suggesting: boolean;
     /** True while a batch generate-images run is in progress. */
@@ -49,7 +58,9 @@ export type AppAction =
   | { type: 'ui/openSetup'; open: boolean }
   | { type: 'ui/openSettings'; open: boolean }
   | { type: 'ui/openDetail'; id: string | null }
-  | { type: 'ui/toast'; toast: AppState['ui']['toast'] }
+  | { type: 'ui/openEditMask'; id: string | null }
+  | { type: 'ui/toast'; toast: { kind: ToastItem['kind']; message: string } | null }
+  | { type: 'ui/dismissToast'; id: string }
   | { type: 'ui/suggesting'; value: boolean }
   | { type: 'ui/generating'; value: boolean };
 
@@ -165,8 +176,18 @@ export function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, ui: { ...state.ui, settingsOpen: action.open } };
     case 'ui/openDetail':
       return { ...state, ui: { ...state.ui, detailGenerationId: action.id } };
-    case 'ui/toast':
-      return { ...state, ui: { ...state.ui, toast: action.toast } };
+    case 'ui/openEditMask':
+      return { ...state, ui: { ...state.ui, editMaskGenerationId: action.id } };
+    case 'ui/toast': {
+      if (!action.toast) return { ...state, ui: { ...state.ui, toasts: [] } };
+      const id = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      const next: ToastItem = { id, kind: action.toast.kind, message: action.toast.message, createdAt: Date.now() };
+      // Cap at 5 visible toasts; drop the oldest.
+      const stack = [...state.ui.toasts, next].slice(-5);
+      return { ...state, ui: { ...state.ui, toasts: stack } };
+    }
+    case 'ui/dismissToast':
+      return { ...state, ui: { ...state.ui, toasts: state.ui.toasts.filter((t) => t.id !== action.id) } };
     case 'ui/suggesting':
       return { ...state, ui: { ...state.ui, suggesting: action.value } };
     case 'ui/generating':
@@ -193,7 +214,8 @@ export const initialState: AppState = {
     setupOpen: false,
     settingsOpen: false,
     detailGenerationId: null,
-    toast: null,
+    editMaskGenerationId: null,
+    toasts: [],
     suggesting: false,
     generating: false,
   },

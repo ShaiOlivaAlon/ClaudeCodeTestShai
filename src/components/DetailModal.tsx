@@ -1,4 +1,4 @@
-import { Download, Film, Copy, RefreshCw, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Download, Film, Copy, RefreshCw, ChevronLeft, ChevronRight, X, Pencil } from 'lucide-react';
 import { useStore } from '../state/store';
 import { Button, Spinner } from './ui';
 import { generateImage, generateVideo, makeAnimatePrompt } from '../lib/api';
@@ -66,6 +66,10 @@ function DetailModalBody({
 
   async function animate() {
     if (!g.imageUrl) return;
+    if (g.video?.url) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'This already has a video.' } });
+      return;
+    }
     if (!state.settings.apiKeys.video?.key) {
       dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add a Video API key in Settings to animate.' } });
       dispatch({ type: 'ui/openSettings', open: true });
@@ -81,15 +85,16 @@ function DetailModalBody({
       },
     };
     dispatch({ type: 'generations/upsert', generation: queued });
-    dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Animating… Veo can take a few minutes. The card will update when it\'s ready.' } });
+    dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Animating… checking cache, then Veo if needed.' } });
     try {
-      const { url } = await generateVideo({
+      const { url, cached } = await generateVideo({
         apiKeys: state.settings.apiKeys,
         model: state.brief.videoModel,
         prompt: queued.video!.prompt,
         imageUrl: g.imageUrl,
         aspectRatio: g.aspectRatio,
       });
+      dispatch({ type: 'ui/toast', toast: { kind: cached ? 'info' : 'success', message: cached ? 'Reused cached video — no API spend.' : 'Video ready.' } });
       const done: Generation = { ...queued, video: { ...queued.video!, status: 'done', url } };
       dispatch({ type: 'generations/upsert', generation: done });
       putGeneration(done);
@@ -112,6 +117,8 @@ function DetailModalBody({
         prompt: g.prompt,
         aspectRatio: g.aspectRatio,
         referenceDataUrls: refs.map((a) => a.dataUrl),
+        // User-initiated regen wants a fresh variation, not the cached result.
+        bypassCache: true,
       });
       const done: Generation = { ...queued, status: 'done', imageUrl: url };
       dispatch({ type: 'generations/upsert', generation: done });
@@ -169,6 +176,21 @@ function DetailModalBody({
             )}
           </div>
           <div className="space-y-3">
+            {g.parentId && (() => {
+              const parent = state.generations.find((x) => x.id === g.parentId);
+              return parent ? (
+                <button
+                  onClick={() => dispatch({ type: 'ui/openDetail', id: parent.id })}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-brand-400/40 bg-brand-500/10 px-2 py-0.5 text-[11px] text-brand-100 hover:bg-brand-500/20"
+                  title="Open the source image this was edited from"
+                >
+                  ← Edited from "{parent.title}"
+                </button>
+              ) : null;
+            })()}
+            {g.editNote && (
+              <Meta label="Edit note" value={g.editNote} />
+            )}
             <Meta label="Aspect ratio" value={g.aspectRatio} />
             <Meta label="Image model" value={g.imageModel} />
             {g.video && <Meta label="Video model" value={g.video.model} />}
@@ -215,6 +237,11 @@ function DetailModalBody({
               {g.video?.url && <Button size="sm" variant="secondary" onClick={() => downloadUrl(g.video!.url!, `${g.title}-${g.aspectRatio}.mp4`)}><Download size={14} /> Download video</Button>}
               <Button size="sm" variant="ghost" onClick={() => copyToClipboard(g.prompt)}><Copy size={14} /> Copy prompt</Button>
               <Button size="sm" variant="ghost" disabled={busy} onClick={regen}><RefreshCw size={14} /> Regenerate</Button>
+              {g.imageUrl && (
+                <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'ui/openEditMask', id: g.id })}>
+                  <Pencil size={14} /> Edit area
+                </Button>
+              )}
               {g.imageUrl && !g.video?.url && (
                 <Button size="sm" onClick={animate} disabled={busy || g.video?.status === 'generating'}>
                   {g.video?.status === 'generating' ? <Spinner size={14} /> : <Film size={14} />}

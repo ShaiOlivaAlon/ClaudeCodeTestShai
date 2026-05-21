@@ -1,7 +1,9 @@
-import type { ApiKeys, AspectRatio, Provider, Role, RoleKey, Suggestion } from '../types';
+import type { ApiKeys, Asset, AspectRatio, Provider, Role, RoleKey, Suggestion } from '../types';
 import { buildAnimatePromptHint, buildImagePromptEnhancer, buildSuggestionSystemPrompt, buildSuggestionUserPrompt, type BriefForLLM } from './prompts';
 import { dataUrlToBlob, falImageSize, klingAspect } from './utils';
 import { findModel, IMAGE_MODELS, TEXT_MODELS, VIDEO_MODELS } from './models';
+import { imageCacheKey, videoCacheKey } from './cacheKey';
+import { getCachedImage, putCachedImage, getCachedVideo, putCachedVideo } from './storage';
 
 // ----- helpers --------------------------------------------------------------
 
@@ -626,16 +628,40 @@ export interface ImageGenInput {
   aspectRatio: AspectRatio;
   /** Asset data URLs to use as references (will be uploaded to fal if needed). */
   referenceDataUrls?: string[];
+  /** Used only to build the content-cache key (reference asset ids + their data urls live here). */
+  cacheRefs?: { referenceAssetIds: string[]; assets: Asset[] };
   onProgress?: (status: string) => void;
+  /** Set to true to bypass the cache (e.g. when the user has explicitly asked for a fresh render). */
+  bypassCache?: boolean;
 }
 
-export async function generateImage(opts: ImageGenInput): Promise<{ url: string }> {
+export async function generateImage(opts: ImageGenInput): Promise<{ url: string; cached: boolean }> {
   const role = getRole(opts.apiKeys, 'image');
   const modelProvider = providerOfModel(IMAGE_MODELS, opts.model) ?? role.provider;
   if (modelProvider !== role.provider) {
     throw new Error(`Image model "${opts.model}" requires the ${modelProvider} provider, but your Image key is set to ${role.provider}.`);
   }
 
+  // Cache lookup (skip if bypass requested).
+  let key: string | null = null;
+  if (!opts.bypassCache && opts.cacheRefs) {
+    key = await imageCacheKey({
+      prompt: opts.prompt,
+      model: opts.model,
+      aspectRatio: opts.aspectRatio,
+      referenceAssetIds: opts.cacheRefs.referenceAssetIds,
+      assets: opts.cacheRefs.assets,
+    });
+    const cached = await getCachedImage(key);
+    if (cached) return { url: cached, cached: true };
+  }
+
+  const result = await dispatchImageGen(opts, role);
+  if (key) { try { await putCachedImage(key, result.url); } catch { /* swallow */ } }
+  return { url: result.url, cached: false };
+}
+
+async function dispatchImageGen(opts: ImageGenInput, role: RoleKey): Promise<{ url: string }> {
   if (role.provider === 'google') {
     // gemini-*-image models use generateContent with image output (Nano Banana family);
     // imagen-* models use the legacy :predict endpoint.
@@ -683,15 +709,34 @@ export interface VideoGenInput {
   imageUrl: string;
   aspectRatio: AspectRatio;
   onProgress?: (status: string) => void;
+  bypassCache?: boolean;
 }
 
-export async function generateVideo(opts: VideoGenInput): Promise<{ url: string }> {
+export async function generateVideo(opts: VideoGenInput): Promise<{ url: string; cached: boolean }> {
   const role = getRole(opts.apiKeys, 'video');
   const modelProvider = providerOfModel(VIDEO_MODELS, opts.model) ?? role.provider;
   if (modelProvider !== role.provider) {
     throw new Error(`Video model "${opts.model}" requires the ${modelProvider} provider, but your Video key is set to ${role.provider}.`);
   }
 
+  let key: string | null = null;
+  if (!opts.bypassCache && opts.imageUrl) {
+    key = await videoCacheKey({
+      prompt: opts.prompt,
+      model: opts.model,
+      aspectRatio: opts.aspectRatio,
+      sourceImageDataUrl: opts.imageUrl,
+    });
+    const cached = await getCachedVideo(key);
+    if (cached) return { url: cached, cached: true };
+  }
+
+  const result = await dispatchVideoGen(opts, role);
+  if (key) { try { await putCachedVideo(key, result.url); } catch { /* swallow */ } }
+  return { url: result.url, cached: false };
+}
+
+async function dispatchVideoGen(opts: VideoGenInput, role: RoleKey): Promise<{ url: string }> {
   if (role.provider === 'google') {
     return veoGenerate({
       apiKey: role.key,
@@ -720,6 +765,70 @@ export async function generateVideo(opts: VideoGenInput): Promise<{ url: string 
 
 export function makeAnimatePrompt(suggestion: { title: string; description: string; prompt: string }): string {
   return buildAnimatePromptHint(suggestion);
+}
+
+// ----- Inpainting (region edit) -------------------------------------------
+
+const INPAINT_MODEL = 'fal-ai/flux-pro/v1/fill';
+
+export interface InpaintInput {
+  apiKeys: ApiKeys;
+  sourceImageDataUrl: string;
+  maskDataUrl: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+  bypassCache?: boolean;
+  onProgress?: (status: string) => void;
+}
+
+/** Region-based image edit. The mask must be a PNG: white = regenerate, black = keep.
+ *  Requires the user's Image role to be configured with a fal.ai key. */
+export async function generateImageInpaint(opts: InpaintInput): Promise<{ url: string; cached: boolean }> {
+  const role = getRole(opts.apiKeys, 'image');
+  if (role.provider !== 'fal') {
+    throw new Error('Region edit currently requires fal.ai as the Image provider. Open Settings to switch.');
+  }
+
+  let key: string | null = null;
+  if (!opts.bypassCache) {
+    key = await imageCacheKey({
+      prompt: opts.prompt,
+      model: INPAINT_MODEL,
+      aspectRatio: opts.aspectRatio,
+      referenceAssetIds: [],
+      assets: [],
+      maskDataUrl: opts.maskDataUrl,
+      sourceImageDataUrl: opts.sourceImageDataUrl,
+    });
+    const cached = await getCachedImage(key);
+    if (cached) return { url: cached, cached: true };
+  }
+
+  // Upload both source and mask to fal storage so the queue endpoint can fetch them.
+  const [sourceUrl, maskUrl] = await Promise.all([
+    falUpload(opts.sourceImageDataUrl, role.key, 'source.png'),
+    falUpload(opts.maskDataUrl, role.key, 'mask.png'),
+  ]);
+
+  const submit = await falSubmit(
+    INPAINT_MODEL,
+    {
+      prompt: opts.prompt,
+      image_url: sourceUrl,
+      mask_url: maskUrl,
+      num_inference_steps: 28,
+      guidance_scale: 30,
+      safety_tolerance: '2',
+    },
+    role.key,
+  );
+  await falPoll(submit.status_url, role.key, opts.onProgress);
+  const out = await falResult<any>(submit.response_url, role.key);
+  const url: string | undefined = out?.images?.[0]?.url ?? out?.image?.url ?? out?.url;
+  if (!url) throw new Error('Inpaint URL not found in fal response.');
+
+  if (key) { try { await putCachedImage(key, url); } catch { /* swallow */ } }
+  return { url, cached: false };
 }
 
 // ----- API key validators -------------------------------------------------

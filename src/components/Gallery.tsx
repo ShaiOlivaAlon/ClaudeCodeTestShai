@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Download, Film, Image as ImageIcon, Trash2, RefreshCw, Maximize2, Copy } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import { Download, Film, Image as ImageIcon, Trash2, RefreshCw, Maximize2, Copy, Pencil } from 'lucide-react';
 import type { Generation } from '../types';
 import { useStore } from '../state/store';
 import { Button, EmptyState, Spinner } from './ui';
@@ -51,6 +52,10 @@ function GalleryCard({ g }: { g: Generation }) {
 
   async function animate() {
     if (!g.imageUrl) return;
+    if (g.video?.url) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'This already has a video — open it to view.' } });
+      return;
+    }
     if (!state.settings.apiKeys.video?.key) {
       dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add a Video API key in Settings.' } });
       return;
@@ -58,16 +63,17 @@ function GalleryCard({ g }: { g: Generation }) {
     const animPrompt = makeAnimatePrompt({ title: g.title, description: '', prompt: g.prompt });
     const queued: Generation = { ...g, video: { status: 'generating', model: state.brief.videoModel, prompt: animPrompt } };
     dispatch({ type: 'generations/upsert', generation: queued });
-    dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Animating… Veo can take a few minutes. The card will update when it\'s ready.' } });
+    dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Animating… checking cache, then Veo if needed.' } });
     setBusy(true);
     try {
-      const { url } = await generateVideo({
+      const { url, cached } = await generateVideo({
         apiKeys: state.settings.apiKeys,
         model: state.brief.videoModel,
         prompt: animPrompt,
         imageUrl: g.imageUrl,
         aspectRatio: g.aspectRatio,
       });
+      dispatch({ type: 'ui/toast', toast: { kind: cached ? 'info' : 'success', message: cached ? 'Reused cached video — no API spend.' : 'Video ready.' } });
       const done: Generation = { ...queued, video: { ...queued.video!, status: 'done', url } };
       dispatch({ type: 'generations/upsert', generation: done });
       putGeneration(done);
@@ -96,6 +102,8 @@ function GalleryCard({ g }: { g: Generation }) {
         prompt: g.prompt,
         aspectRatio: g.aspectRatio,
         referenceDataUrls: refs.map((a) => a.dataUrl),
+        // User-initiated regen wants a fresh variation, not the cached result.
+        bypassCache: true,
       });
       const done: Generation = { ...queued, status: 'done', imageUrl: url, createdAt: Date.now() };
       dispatch({ type: 'generations/upsert', generation: done });
@@ -113,8 +121,26 @@ function GalleryCard({ g }: { g: Generation }) {
     dispatch({ type: 'generations/remove', id: g.id });
   }
 
+  // Brief success pulse when a render finishes (status transitions generating -> done).
+  const [pulse, setPulse] = useState(false);
+  const prevStatus = useRef<typeof g.status>(g.status);
+  useEffect(() => {
+    if (prevStatus.current !== 'done' && g.status === 'done') {
+      setPulse(true);
+      const t = setTimeout(() => setPulse(false), 1200);
+      return () => clearTimeout(t);
+    }
+    prevStatus.current = g.status;
+  }, [g.status]);
+
+  const parent = g.parentId ? state.generations.find((x) => x.id === g.parentId) : null;
+
   return (
-    <div className="group relative overflow-hidden rounded-lg border border-ink-700 bg-ink-850">
+    <motion.div
+      animate={{ boxShadow: pulse ? '0 0 0 3px rgba(70,210,140,0.7)' : '0 0 0 0 rgba(70,210,140,0)' }}
+      transition={{ duration: 0.6, ease: 'easeOut' }}
+      className="group relative overflow-hidden rounded-lg border border-ink-700 bg-ink-850"
+    >
       <div className="relative aspect-square w-full bg-ink-800">
         {g.status === 'generating' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-ink-900/90 text-xs text-ink-200">
@@ -161,6 +187,15 @@ function GalleryCard({ g }: { g: Generation }) {
 
       <div className="px-2 py-1.5">
         <div className="truncate text-xs font-semibold text-white">{g.title}</div>
+        {parent && (
+          <button
+            onClick={() => dispatch({ type: 'ui/openDetail', id: parent.id })}
+            className="mt-0.5 truncate text-[10px] text-ink-400 hover:text-brand-200"
+            title={`Edited from: ${parent.title}`}
+          >
+            ← edited from "{parent.title}"
+          </button>
+        )}
       </div>
 
       <div className="absolute inset-x-0 bottom-0 flex translate-y-0 items-center justify-between gap-1 border-t border-ink-700 bg-ink-900/95 p-1.5 transition-transform lg:translate-y-full lg:group-hover:translate-y-0">
@@ -181,21 +216,30 @@ function GalleryCard({ g }: { g: Generation }) {
         </div>
         <div className="flex gap-1">
           {g.imageUrl && !g.video?.url && (
-            <button disabled={busy || g.video?.status === 'generating'} onClick={animate} title="Animate to video" className="inline-flex items-center gap-1 rounded-md bg-brand-500/20 px-2 py-1.5 text-[10px] font-bold text-brand-100 hover:bg-brand-500/30 disabled:opacity-50">
+            <button disabled={busy || g.video?.status === 'generating'} onClick={animate} title="Animate to video" className="inline-flex items-center gap-1 rounded-md bg-brand-500/20 px-2 py-1.5 text-[10px] font-bold text-brand-100 transition active:scale-95 hover:bg-brand-500/30 disabled:opacity-50">
               <Film size={12} /> Animate
             </button>
           )}
-          <button onClick={regenerate} disabled={busy} title="Regenerate" className="rounded-md p-1.5 text-ink-200 hover:bg-ink-700 hover:text-white">
+          {g.imageUrl && (
+            <button
+              onClick={() => dispatch({ type: 'ui/openEditMask', id: g.id })}
+              title="Edit a region (inpaint)"
+              className="rounded-md p-1.5 text-ink-200 transition active:scale-95 hover:bg-ink-700 hover:text-white"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+          <button onClick={regenerate} disabled={busy} title="Regenerate (fresh variation)" className="rounded-md p-1.5 text-ink-200 transition active:scale-95 hover:bg-ink-700 hover:text-white">
             <RefreshCw size={14} />
           </button>
-          <button onClick={() => copyToClipboard(g.prompt)} title="Copy prompt" className="rounded-md p-1.5 text-ink-200 hover:bg-ink-700 hover:text-white">
+          <button onClick={() => copyToClipboard(g.prompt)} title="Copy prompt" className="rounded-md p-1.5 text-ink-200 transition active:scale-95 hover:bg-ink-700 hover:text-white">
             <Copy size={14} />
           </button>
-          <button onClick={remove} title="Delete" className="rounded-md p-1.5 text-rose-300 hover:bg-ink-700 hover:text-white">
+          <button onClick={remove} title="Delete" className="rounded-md p-1.5 text-rose-300 transition active:scale-95 hover:bg-ink-700 hover:text-white">
             <Trash2 size={14} />
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

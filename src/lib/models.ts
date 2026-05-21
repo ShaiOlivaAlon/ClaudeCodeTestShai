@@ -9,6 +9,8 @@ export interface ModelDef {
   supportsReference?: boolean;
   /** If true, this model is known to render embedded titles/text reliably. */
   supportsText?: boolean;
+  /** If true, this image model accepts a binary mask + source image for region-based inpainting. */
+  supportsMask?: boolean;
 }
 
 export const PROVIDER_LABEL: Record<Provider, string> = {
@@ -50,6 +52,7 @@ export const IMAGE_MODELS: ModelDef[] = [
   { id: 'fal-ai/flux/dev',                 name: 'FLUX Dev',           provider: 'fal',    description: 'Fast iterations.' },
   { id: 'fal-ai/flux-pulid',               name: 'FLUX + Character',   provider: 'fal',    description: 'Keeps character identity from a reference.', supportsReference: true },
   { id: 'fal-ai/flux/dev/image-to-image',  name: 'FLUX Img-to-Img',    provider: 'fal',    description: 'Re-styles a reference frame.', supportsReference: true },
+  { id: 'fal-ai/flux-pro/v1/fill',         name: 'FLUX Pro Fill (inpaint)', provider: 'fal', description: 'Region-based edit — paint a mask, describe the change.', supportsReference: true, supportsMask: true },
   { id: 'fal-ai/ideogram/v2',              name: 'Ideogram v2',        provider: 'fal',    description: 'Best for embedded title text.', supportsText: true },
   { id: 'fal-ai/recraft-v3',               name: 'Recraft v3',         provider: 'fal',    description: 'Vector & illustration styles.' },
   { id: 'gpt-image-1',                     name: 'GPT Image 1',        provider: 'openai', description: 'OpenAI\'s newest image model — renders text well.', supportsText: true },

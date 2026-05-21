@@ -1,10 +1,12 @@
 import type { ApiKeys, Asset, BriefPreset, Generation, Settings } from '../types';
 
 const DB_NAME = 'playtika-artist-studio';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_ASSETS = 'assets';
 const STORE_GENERATIONS = 'generations';
 const STORE_PRESETS = 'briefPresets';
+const STORE_IMAGE_CACHE = 'imageCache';
+const STORE_VIDEO_CACHE = 'videoCache';
 const SETTINGS_KEY = 'pas.settings.v1';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -23,6 +25,12 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_PRESETS)) {
         db.createObjectStore(STORE_PRESETS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_IMAGE_CACHE)) {
+        db.createObjectStore(STORE_IMAGE_CACHE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORE_VIDEO_CACHE)) {
+        db.createObjectStore(STORE_VIDEO_CACHE, { keyPath: 'key' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -218,3 +226,32 @@ export async function deleteBriefPreset(id: string): Promise<void> {
     });
   });
 }
+
+// --- Content-keyed render cache --------------------------------------------
+
+interface CacheEntry { key: string; url: string; createdAt: number }
+
+function cacheGet(store: string, key: string): Promise<string | null> {
+  return tx<string | null>(store, 'readonly', (s) => {
+    return new Promise<string | null>((resolve, reject) => {
+      const req = s.get(key);
+      req.onsuccess = () => resolve((req.result as CacheEntry | undefined)?.url ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+function cachePut(store: string, key: string, url: string): Promise<void> {
+  return tx<void>(store, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.put({ key, url, createdAt: Date.now() } as CacheEntry);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export const getCachedImage = (key: string) => cacheGet(STORE_IMAGE_CACHE, key);
+export const putCachedImage = (key: string, url: string) => cachePut(STORE_IMAGE_CACHE, key, url);
+export const getCachedVideo = (key: string) => cacheGet(STORE_VIDEO_CACHE, key);
+export const putCachedVideo = (key: string, url: string) => cachePut(STORE_VIDEO_CACHE, key, url);

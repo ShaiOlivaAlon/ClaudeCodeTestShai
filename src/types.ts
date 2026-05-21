@@ -75,6 +75,10 @@ export interface Generation {
   chosenSeason?: string;
   chosenTheme?: string;
   chosenStyle?: string;
+  /** When this generation was derived from another (inpaint / refinement), the source id. */
+  parentId?: string;
+  /** Set on inpaint results — short description of the edit ("hat -> wizard hat"). */
+  editNote?: string;
 }
 
 /** A reusable brief configuration (no assets — those live in the library). */

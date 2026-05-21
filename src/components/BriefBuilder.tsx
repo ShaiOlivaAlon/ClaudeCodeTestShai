@@ -134,13 +134,17 @@ export function BriefBuilder() {
           };
           dispatch({ type: 'generations/upsert', generation: gen });
           try {
-            const { url } = await generateImage({
+            const { url, cached } = await generateImage({
               apiKeys,
               model: brief.imageModel,
               prompt: sug.prompt,
               aspectRatio: ratio,
               referenceDataUrls,
+              cacheRefs: { referenceAssetIds: includedAssets.map((a) => a.id), assets: state.assets },
             });
+            if (cached) {
+              dispatch({ type: 'ui/toast', toast: { kind: 'info', message: `Reused cached render for "${sug.title}" (${ratio}) — no API spend.` } });
+            }
             const completed = { ...gen, imageUrl: url, status: 'done' as const };
             dispatch({ type: 'generations/upsert', generation: completed });
             putGeneration(completed);

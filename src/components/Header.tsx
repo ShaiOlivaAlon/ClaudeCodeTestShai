@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { Settings as SettingsIcon, Sparkles } from 'lucide-react';
 import { useStore } from '../state/store';
 
@@ -9,10 +10,15 @@ export function Header() {
   return (
     <header className="flex items-center justify-between border-b border-ink-800 bg-ink-950 px-3 py-2 sm:px-5 sm:py-3">
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-gradient shadow-glow sm:h-9 sm:w-9">
+        <motion.div
+          initial={{ scale: 0.6, rotate: -20, opacity: 0 }}
+          animate={{ scale: [0.6, 1.15, 1], rotate: [-20, 8, 0], opacity: 1 }}
+          transition={{ duration: 0.7, ease: 'easeOut', times: [0, 0.6, 1] }}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-gradient shadow-glow sm:h-9 sm:w-9"
+        >
           <Sparkles size={16} className="text-white sm:hidden" />
           <Sparkles size={18} className="hidden text-white sm:block" />
-        </div>
+        </motion.div>
         <div className="min-w-0">
           <div className="truncate font-display text-sm font-bold text-white sm:text-base">Playtika Artist Studio</div>
           <div className="hidden truncate text-[11px] text-ink-300 sm:block">Generate marketing sets from your characters, items & IP</div>

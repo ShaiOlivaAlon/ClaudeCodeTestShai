@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, X } from 'lucide-react';
+import type { ToastItem } from '../state/store';
 import { cls } from '../lib/utils';
 
 export function Button({
@@ -14,7 +16,7 @@ export function Button({
   className?: string;
   title?: string;
 }) {
-  const base = 'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition disabled:opacity-40 disabled:cursor-not-allowed select-none';
+  const base = 'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 select-none';
   const sizes = {
     sm: 'px-2.5 py-1.5 text-xs',
     md: 'px-3.5 py-2 text-sm',
@@ -220,18 +222,41 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
   );
 }
 
-export function Toast({ toast, onClose }: { toast: { kind: 'info' | 'success' | 'error'; message: string } | null; onClose: () => void }) {
-  if (!toast) return null;
-  const tone = toast.kind === 'error' ? 'border-rose-500/60 bg-rose-500/10 text-rose-100'
-    : toast.kind === 'success' ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-100'
-    : 'border-brand-400/60 bg-brand-500/10 text-brand-100';
+export function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: string) => void }) {
   return (
-    <div className={cls('fixed bottom-20 left-1/2 z-[60] -translate-x-1/2 rounded-lg border px-4 py-2 text-sm shadow-soft lg:bottom-4', tone)}>
-      <div className="flex items-center gap-3">
-        <span>{toast.message}</span>
-        <button onClick={onClose} className="text-current opacity-70 hover:opacity-100"><X size={14} /></button>
-      </div>
+    <div className="pointer-events-none fixed inset-x-0 bottom-20 z-[60] flex flex-col items-center gap-2 px-3 lg:bottom-4">
+      <AnimatePresence initial={false}>
+        {toasts.map((t) => (
+          <ToastRow key={t.id} toast={t} onDismiss={onDismiss} />
+        ))}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function ToastRow({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: string) => void }) {
+  useEffect(() => {
+    const ms = toast.kind === 'error' ? 6500 : 4500;
+    const t = setTimeout(() => onDismiss(toast.id), ms);
+    return () => clearTimeout(t);
+  }, [toast.id, toast.kind, onDismiss]);
+
+  const tone = toast.kind === 'error' ? 'border-rose-500/60 bg-rose-500/15 text-rose-100'
+    : toast.kind === 'success' ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-100'
+    : 'border-brand-400/60 bg-brand-500/15 text-brand-100';
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+      className={cls('pointer-events-auto max-w-md rounded-lg border px-4 py-2 text-sm shadow-soft backdrop-blur', tone)}
+    >
+      <div className="flex items-center gap-3">
+        <span className="flex-1">{toast.message}</span>
+        <button onClick={() => onDismiss(toast.id)} className="text-current opacity-70 hover:opacity-100"><X size={14} /></button>
+      </div>
+    </motion.div>
   );
 }
 
