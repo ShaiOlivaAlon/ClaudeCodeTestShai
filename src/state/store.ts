@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { Asset, Brief, Generation, Settings, Suggestion } from '../types';
+import type { Asset, Brief, BriefPreset, Generation, Settings, Suggestion } from '../types';
 
 export interface AppState {
   settings: Settings;
@@ -7,6 +7,7 @@ export interface AppState {
   brief: Brief;
   suggestions: Suggestion[];
   generations: Generation[];
+  briefPresets: BriefPreset[];
   /** UI: which modals are open. */
   ui: {
     setupOpen: boolean;
@@ -27,7 +28,11 @@ export type AppAction =
   | { type: 'settings/patch'; patch: Partial<Settings> }
   | { type: 'assets/set'; assets: Asset[] }
   | { type: 'assets/add'; asset: Asset }
+  | { type: 'assets/patch'; id: string; patch: Partial<Pick<Asset, 'name' | 'description'>> }
   | { type: 'assets/remove'; id: string }
+  | { type: 'briefPresets/set'; presets: BriefPreset[] }
+  | { type: 'briefPresets/upsert'; preset: BriefPreset }
+  | { type: 'briefPresets/remove'; id: string }
   | { type: 'brief/patch'; patch: Partial<Brief> }
   | { type: 'brief/toggleAsset'; assetId: string }
   | { type: 'brief/toggleAspect'; ratio: Brief['aspectRatios'][number] }
@@ -74,6 +79,11 @@ export function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, assets: action.assets };
     case 'assets/add':
       return { ...state, assets: [action.asset, ...state.assets.filter((a) => a.id !== action.asset.id)] };
+    case 'assets/patch':
+      return {
+        ...state,
+        assets: state.assets.map((a) => (a.id === action.id ? { ...a, ...action.patch } : a)),
+      };
     case 'assets/remove':
       return {
         ...state,
@@ -138,6 +148,17 @@ export function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, generations: state.generations.filter((g) => g.id !== action.id) };
     case 'generations/clear':
       return { ...state, generations: [] };
+    case 'briefPresets/set':
+      return { ...state, briefPresets: action.presets };
+    case 'briefPresets/upsert': {
+      const idx = state.briefPresets.findIndex((p) => p.id === action.preset.id);
+      const list = idx >= 0
+        ? state.briefPresets.map((p) => (p.id === action.preset.id ? action.preset : p))
+        : [action.preset, ...state.briefPresets];
+      return { ...state, briefPresets: list };
+    }
+    case 'briefPresets/remove':
+      return { ...state, briefPresets: state.briefPresets.filter((p) => p.id !== action.id) };
     case 'ui/openSetup':
       return { ...state, ui: { ...state.ui, setupOpen: action.open } };
     case 'ui/openSettings':
@@ -167,6 +188,7 @@ export const initialState: AppState = {
   brief: defaultBrief,
   suggestions: [],
   generations: [],
+  briefPresets: [],
   ui: {
     setupOpen: false,
     settingsOpen: false,

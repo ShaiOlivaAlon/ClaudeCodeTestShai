@@ -4,6 +4,8 @@ export interface Asset {
   id: string;
   category: AssetCategory;
   name: string;
+  /** Optional short description the user can write so the prompt model knows what this asset is. */
+  description?: string;
   dataUrl: string;
   width: number;
   height: number;
@@ -36,6 +38,12 @@ export interface Suggestion {
   prompt: string;
   tags: string[];
   selected: boolean;
+  /** The single seasonal context this idea was built around (one of brief.seasons). */
+  chosenSeason?: string;
+  /** The single primary theme this idea was built around (one of brief.themes). */
+  chosenTheme?: string;
+  /** The single primary visual style this idea was built around (one of brief.styles). */
+  chosenStyle?: string;
 }
 
 export type GenerationStatus = 'queued' | 'generating' | 'done' | 'error';
@@ -63,6 +71,19 @@ export interface Generation {
   video?: VideoGeneration;
   /** Asset ids used as references for this generation. */
   referenceAssetIds: string[];
+  /** Mirrors of the suggestion's chosen-axis fields so the gallery can show them without joining. */
+  chosenSeason?: string;
+  chosenTheme?: string;
+  chosenStyle?: string;
+}
+
+/** A reusable brief configuration (no assets — those live in the library). */
+export interface BriefPreset {
+  id: string;
+  name: string;
+  /** Snapshot of the brief without selectedAssetIds (since asset ids are install-local). */
+  brief: Omit<Brief, 'selectedAssetIds'>;
+  createdAt: number;
 }
 
 export type Provider = 'google' | 'anthropic' | 'fal' | 'openai' | 'azure-openai';

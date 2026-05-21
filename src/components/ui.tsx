@@ -1,5 +1,5 @@
-import React from 'react';
-import { X } from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
 import { cls } from '../lib/utils';
 
 export function Button({
@@ -242,6 +242,47 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
       {hint && <span className="ml-2 text-xs text-ink-400">{hint}</span>}
       <div className="mt-1">{children}</div>
     </label>
+  );
+}
+
+export function AccordionCard({
+  title, subtitle, summary, action, defaultOpen = false, children,
+}: {
+  title: string;
+  subtitle?: string;
+  /** Short one-line summary of the section's current value (e.g. "3 themes · 2 styles"). Shown when collapsed. */
+  summary?: React.ReactNode;
+  action?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Card padding={false}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-ink-100">{title}</h3>
+            {!open && summary && (
+              <span className="truncate text-xs text-ink-300">· {summary}</span>
+            )}
+          </div>
+          {subtitle && <p className="mt-0.5 text-xs text-ink-400">{subtitle}</p>}
+        </div>
+        <div className="flex items-center gap-2 text-ink-300">
+          {action}
+          <ChevronDown
+            size={16}
+            className={cls('transition-transform', open && 'rotate-180')}
+          />
+        </div>
+      </button>
+      {open && <div className="border-t border-ink-700 px-4 py-4">{children}</div>}
+    </Card>
   );
 }
 

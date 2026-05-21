@@ -1,6 +1,6 @@
 import { useEffect, useReducer } from 'react';
 import { initialState, reducer, StoreContext } from './state/store';
-import { listAssets, listGenerations, loadSettings } from './lib/storage';
+import { listAssets, listBriefPresets, listGenerations, loadSettings } from './lib/storage';
 import { Header } from './components/Header';
 import { AssetLibrary } from './components/AssetLibrary';
 import { BriefBuilder } from './components/BriefBuilder';
@@ -18,9 +18,14 @@ export function App() {
     (async () => {
       const settings = loadSettings();
       dispatch({ type: 'settings/set', settings });
-      const [assets, generations] = await Promise.all([listAssets(), listGenerations()]);
+      const [assets, generations, presets] = await Promise.all([
+        listAssets(),
+        listGenerations(),
+        listBriefPresets(),
+      ]);
       dispatch({ type: 'assets/set', assets });
       dispatch({ type: 'generations/set', generations });
+      dispatch({ type: 'briefPresets/set', presets });
 
       // Push defaults into the brief if the user has changed model defaults in settings.
       dispatch({

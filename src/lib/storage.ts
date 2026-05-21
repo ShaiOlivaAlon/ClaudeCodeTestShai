@@ -1,9 +1,10 @@
-import type { ApiKeys, Asset, Generation, Settings } from '../types';
+import type { ApiKeys, Asset, BriefPreset, Generation, Settings } from '../types';
 
 const DB_NAME = 'playtika-artist-studio';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_ASSETS = 'assets';
 const STORE_GENERATIONS = 'generations';
+const STORE_PRESETS = 'briefPresets';
 const SETTINGS_KEY = 'pas.settings.v1';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -19,6 +20,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_GENERATIONS)) {
         db.createObjectStore(STORE_GENERATIONS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_PRESETS)) {
+        db.createObjectStore(STORE_PRESETS, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -177,6 +181,38 @@ export async function clearAllGenerations(): Promise<void> {
   await tx<void>(STORE_GENERATIONS, 'readwrite', (s) => {
     return new Promise<void>((resolve, reject) => {
       const req = s.clear();
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+// --- Brief presets ----------------------------------------------------------
+
+export async function listBriefPresets(): Promise<BriefPreset[]> {
+  return tx<BriefPreset[]>(STORE_PRESETS, 'readonly', (s) => {
+    return new Promise<BriefPreset[]>((resolve, reject) => {
+      const req = s.getAll();
+      req.onsuccess = () => resolve((req.result as BriefPreset[]).sort((a, b) => b.createdAt - a.createdAt));
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function putBriefPreset(p: BriefPreset): Promise<void> {
+  await tx<void>(STORE_PRESETS, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.put(p);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function deleteBriefPreset(id: string): Promise<void> {
+  await tx<void>(STORE_PRESETS, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.delete(id);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });

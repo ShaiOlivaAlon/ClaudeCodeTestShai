@@ -585,7 +585,17 @@ export async function generateSuggestions(opts: {
   const user = buildSuggestionUserPrompt(opts.brief);
   const raw = await dispatchText(role, opts.textModel, system, user, 6000);
 
-  const parsed = extractJson(raw) as { ideas: { title: string; description: string; prompt: string; tags?: string[] }[] };
+  const parsed = extractJson(raw) as {
+    ideas: {
+      title: string;
+      description: string;
+      prompt: string;
+      tags?: string[];
+      chosenSeason?: string;
+      chosenTheme?: string;
+      chosenStyle?: string;
+    }[];
+  };
   return parsed.ideas.map((i, idx) => ({
     id: `sug_${Date.now()}_${idx}`,
     title: i.title ?? `Idea ${idx + 1}`,
@@ -593,6 +603,9 @@ export async function generateSuggestions(opts: {
     prompt: i.prompt ?? '',
     tags: i.tags ?? [],
     selected: true,
+    chosenSeason: i.chosenSeason?.trim() || undefined,
+    chosenTheme:  i.chosenTheme?.trim()  || undefined,
+    chosenStyle:  i.chosenStyle?.trim()  || undefined,
   }));
 }
 

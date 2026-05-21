@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckSquare, Square, Sparkles, Wand2, Image as ImageIcon, Cog, RefreshCw } from 'lucide-react';
-import type { AspectRatio, Brief, Suggestion } from '../types';
+import { CheckSquare, Square, Sparkles, Wand2, Image as ImageIcon, RefreshCw, Save, Trash2, Bookmark } from 'lucide-react';
+import type { AspectRatio, Brief, BriefPreset, Suggestion } from '../types';
 import { useStore } from '../state/store';
 import {
   ASPECT_RATIOS, IMAGE_MODELS, PRESET_FEATURES, PRESET_STYLES, PRESET_THEMES,
   SEASONS, findModel,
 } from '../lib/models';
 import { useProviderModels, labelWithNew } from '../lib/googleModels';
-import { Button, Card, Chip, Field, SectionHeader, Select, Spinner, Textarea, TextInput, EmptyState, Toggle } from './ui';
+import { AccordionCard, Button, Card, Chip, Field, SectionHeader, Select, Spinner, Textarea, TextInput, EmptyState, Toggle } from './ui';
 import { TagCloud } from './TagCloud';
 import { generateSuggestions, generateImage, makeAnimatePrompt, generateVideo } from '../lib/api';
-import { putGeneration } from '../lib/storage';
+import { putBriefPreset, deleteBriefPreset, putGeneration } from '../lib/storage';
 import { cls, uid } from '../lib/utils';
 
 export function BriefBuilder() {
@@ -30,7 +30,6 @@ export function BriefBuilder() {
 
   const apiKeys = state.settings.apiKeys;
 
-  // Filter model dropdowns by the provider chosen for that role.
   const textProv  = apiKeys.text?.provider  ?? 'google';
   const imageProv = apiKeys.image?.provider ?? 'google';
   const videoProv = apiKeys.video?.provider ?? 'google';
@@ -41,8 +40,6 @@ export function BriefBuilder() {
   const imageModel = findModel(IMAGE_MODELS, brief.imageModel);
   const canUseRef = Boolean(imageModel?.supportsReference);
 
-  // If the role's provider changed and the brief's chosen model no longer belongs to that
-  // provider, snap to the first available model for the new provider.
   useEffect(() => {
     const fixes: Partial<Brief> = {};
     if (!textModels.some((m) => m.id === brief.textModel)   && textModels[0])  fixes.textModel  = textModels[0].id;
@@ -107,7 +104,6 @@ export function BriefBuilder() {
 
     dispatch({ type: 'ui/generating', value: true });
 
-    // Collect reference data URLs once; the API layer uploads them per-call only when needed.
     let referenceDataUrls: string[] = [];
     if (canUseRef) {
       const refs = [...characters, ...references, ...items, ...logos].slice(0, 3);
@@ -132,6 +128,9 @@ export function BriefBuilder() {
             status: 'generating' as const,
             createdAt: Date.now(),
             referenceAssetIds: includedAssets.map((a) => a.id),
+            chosenSeason: sug.chosenSeason,
+            chosenTheme:  sug.chosenTheme,
+            chosenStyle:  sug.chosenStyle,
           };
           dispatch({ type: 'generations/upsert', generation: gen });
           try {
@@ -146,7 +145,6 @@ export function BriefBuilder() {
             dispatch({ type: 'generations/upsert', generation: completed });
             putGeneration(completed);
 
-            // Optionally chain video generation.
             if (animateOnGenerate && apiKeys.video?.key) {
               const animPrompt = makeAnimatePrompt({ title: sug.title, description: sug.description, prompt: sug.prompt });
               const withVideoQueued = { ...completed, video: { status: 'generating' as const, model: brief.videoModel, prompt: animPrompt } };
@@ -184,7 +182,31 @@ export function BriefBuilder() {
     );
   }
 
-  const briefReady = useMemo(() => brief.aspectRatios.length > 0 && (brief.themes.length + brief.styles.length + brief.features.length + brief.titles.length + brief.notes.length > 0), [brief]);
+  const briefReady = useMemo(
+    () => brief.aspectRatios.length > 0
+      && (brief.themes.length + brief.styles.length + brief.features.length + brief.titles.length + brief.notes.length > 0),
+    [brief],
+  );
+
+  // Summaries shown in the collapsed accordion headers.
+  const moodSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (brief.seasons.length) parts.push(`${brief.seasons.length} season${brief.seasons.length > 1 ? 's' : ''}`);
+    if (brief.themes.length)  parts.push(`${brief.themes.length} theme${brief.themes.length > 1 ? 's' : ''}`);
+    if (brief.styles.length)  parts.push(`${brief.styles.length} style${brief.styles.length > 1 ? 's' : ''}`);
+    if (brief.features.length) parts.push(`${brief.features.length} FX`);
+    return parts.length ? parts.join(' · ') : 'nothing selected';
+  }, [brief]);
+
+  const copySummary = useMemo(() => {
+    const parts: string[] = [];
+    if (brief.titles.length) parts.push(`${brief.titles.length} title${brief.titles.length > 1 ? 's' : ''}`);
+    if (brief.textExamples.length) parts.push(`${brief.textExamples.length} copy example${brief.textExamples.length > 1 ? 's' : ''}`);
+    if (brief.notes.trim()) parts.push('notes');
+    return parts.length ? parts.join(' · ') : 'no copy set';
+  }, [brief]);
+
+  const modelsSummary = `ideation: ${findModel(textModels as any, brief.textModel)?.name ?? brief.textModel} · image: ${findModel(imageModels as any, brief.imageModel)?.name ?? brief.imageModel} · ${brief.variationCount} ideas`;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -198,7 +220,9 @@ export function BriefBuilder() {
         </div>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+      <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <PresetsBar />
+
         <Card>
           <SectionHeader title="Included from library" subtitle="Click thumbnails on the left to add or remove."
             action={includedAssets.length > 0 && (
@@ -220,7 +244,7 @@ export function BriefBuilder() {
                   <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-400">{group.label}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {group.list.map((a) => (
-                      <div key={a.id} className="group relative">
+                      <div key={a.id} className="group relative" title={a.description || a.name}>
                         <img src={a.dataUrl} alt={a.name} className="h-12 w-12 rounded-md border border-ink-700 object-cover" />
                         <button
                           onClick={() => dispatch({ type: 'brief/toggleAsset', assetId: a.id })}
@@ -264,8 +288,11 @@ export function BriefBuilder() {
           </div>
         </Card>
 
-        <Card>
-          <SectionHeader title="Mood, theme & style" subtitle="Mix presets and add your own." />
+        <AccordionCard
+          title="Mood, theme & style"
+          subtitle="Each idea picks one season + one theme + one style from these lists."
+          summary={moodSummary}
+        >
           <div className="space-y-4">
             <Field label="Seasonal / period">
               <TagCloud
@@ -291,7 +318,7 @@ export function BriefBuilder() {
                 placeholder="e.g. matte painting"
               />
             </Field>
-            <Field label="Required features / FX">
+            <Field label="Required features / FX (combined freely per image)">
               <TagCloud
                 selected={brief.features}
                 presets={PRESET_FEATURES}
@@ -300,10 +327,13 @@ export function BriefBuilder() {
               />
             </Field>
           </div>
-        </Card>
+        </AccordionCard>
 
-        <Card>
-          <SectionHeader title="Copy & must-appear titles" subtitle="Titles will be requested verbatim on the image." />
+        <AccordionCard
+          title="Copy & must-appear titles"
+          subtitle="Titles are requested verbatim on the image."
+          summary={copySummary}
+        >
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Title text (rendered on image)">
               <div className="flex items-center gap-2">
@@ -344,10 +374,13 @@ export function BriefBuilder() {
                 placeholder="anything else — campaign goal, audience, do's and don'ts…" />
             </Field>
           </div>
-        </Card>
+        </AccordionCard>
 
-        <Card>
-          <SectionHeader title="Models & count" subtitle="Per-batch overrides; defaults come from Settings." />
+        <AccordionCard
+          title="Models & count"
+          subtitle="Per-batch overrides; defaults come from Settings."
+          summary={modelsSummary}
+        >
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Ideation model">
               <Select value={brief.textModel} onChange={(v) => patch({ textModel: v })}
@@ -369,10 +402,7 @@ export function BriefBuilder() {
               />
             </Field>
             <div className="md:col-span-2 flex items-end justify-end">
-              <div className="flex items-center gap-3 text-xs text-ink-300">
-                <Toggle checked={animateOnGenerate} onChange={setAnimateOnGenerate} label="Auto-animate to video" />
-                <Cog size={14} className="text-ink-400" />
-              </div>
+              <Toggle checked={animateOnGenerate} onChange={setAnimateOnGenerate} label="Auto-animate to video" />
             </div>
           </div>
           {!canUseRef && characters.length > 0 && (
@@ -381,7 +411,7 @@ export function BriefBuilder() {
               <em> FLUX + Character</em> or <em>GPT Image 1</em> to lock identity.
             </p>
           )}
-        </Card>
+        </AccordionCard>
 
         <Card className="border-brand-400/40 bg-brand-500/5">
           <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -389,7 +419,7 @@ export function BriefBuilder() {
               <div className="flex items-center gap-2 font-display text-base font-semibold text-white">
                 <Sparkles size={18} className="text-brand-300" /> Brainstorm concept set
               </div>
-              <div className="text-xs text-ink-300">Claude turns your brief into a multi-choice list of ideas.</div>
+              <div className="text-xs text-ink-300">Each idea picks one season + theme + style — clearly labelled on the result.</div>
             </div>
             <Button size="lg" onClick={onGenerateSuggestions} disabled={state.ui.suggesting || !briefReady} title={!briefReady ? 'Fill at least an aspect ratio plus a theme/style/title.' : ''}>
               {state.ui.suggesting ? <Spinner size={16} /> : <Wand2 size={16} />}
@@ -401,6 +431,94 @@ export function BriefBuilder() {
         {state.suggestions.length > 0 && <SuggestionPanel onGenerate={onGenerateImages} generating={state.ui.generating} />}
       </div>
     </div>
+  );
+}
+
+function PresetsBar() {
+  const { state, dispatch } = useStore();
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+
+  async function save() {
+    const n = name.trim();
+    if (!n) return;
+    const { selectedAssetIds: _omit, ...rest } = state.brief;
+    void _omit;
+    const preset: BriefPreset = {
+      id: uid('preset'),
+      name: n,
+      brief: rest,
+      createdAt: Date.now(),
+    };
+    await putBriefPreset(preset);
+    dispatch({ type: 'briefPresets/upsert', preset });
+    dispatch({ type: 'ui/toast', toast: { kind: 'success', message: `Saved preset "${n}".` } });
+    setNaming(false);
+    setName('');
+  }
+
+  function load(id: string) {
+    if (!id) return;
+    const p = state.briefPresets.find((x) => x.id === id);
+    if (!p) return;
+    dispatch({ type: 'brief/patch', patch: p.brief });
+    dispatch({ type: 'ui/toast', toast: { kind: 'info', message: `Loaded preset "${p.name}".` } });
+  }
+
+  async function remove(id: string) {
+    const p = state.briefPresets.find((x) => x.id === id);
+    if (!p) return;
+    if (!confirm(`Delete preset "${p.name}"?`)) return;
+    await deleteBriefPreset(id);
+    dispatch({ type: 'briefPresets/remove', id });
+  }
+
+  return (
+    <Card padding={false}>
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-200">
+          <Bookmark size={14} className="text-brand-300" /> Presets
+        </div>
+        {state.briefPresets.length > 0 ? (
+          <div className="flex flex-1 flex-wrap items-center gap-1.5">
+            {state.briefPresets.map((p) => (
+              <span key={p.id} className="inline-flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/60 pl-2.5 text-xs text-ink-200">
+                <button onClick={() => load(p.id)} className="py-1 hover:text-white" title="Load this preset">
+                  {p.name}
+                </button>
+                <button
+                  onClick={() => remove(p.id)}
+                  className="rounded-r-full px-1.5 py-1 text-ink-400 hover:text-rose-300"
+                  title="Delete preset"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="flex-1 text-xs text-ink-400">No saved presets yet. Save the current brief to reuse it later.</span>
+        )}
+        {naming ? (
+          <>
+            <TextInput
+              value={name}
+              onChange={setName}
+              placeholder="preset name…"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } if (e.key === 'Escape') { setNaming(false); setName(''); } }}
+              className="max-w-[180px] py-1 text-xs"
+            />
+            <Button size="sm" onClick={save}><Save size={12} /> Save</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setNaming(false); setName(''); }}>Cancel</Button>
+          </>
+        ) : (
+          <Button size="sm" variant="secondary" onClick={() => setNaming(true)}>
+            <Save size={12} /> Save current
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -451,8 +569,11 @@ function SuggestionRow({ suggestion }: { suggestion: Suggestion }) {
           {suggestion.selected ? <CheckSquare size={18} /> : <Square size={18} className="text-ink-400" />}
         </button>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="truncate font-semibold text-white">{suggestion.title}</div>
+            {suggestion.chosenSeason && <AxisPill kind="season" value={suggestion.chosenSeason} />}
+            {suggestion.chosenTheme  && <AxisPill kind="theme"  value={suggestion.chosenTheme} />}
+            {suggestion.chosenStyle  && <AxisPill kind="style"  value={suggestion.chosenStyle} />}
             {suggestion.tags.map((t) => (
               <span key={t} className="rounded-full bg-ink-700 px-2 py-0.5 text-[10px] text-ink-200">{t}</span>
             ))}
@@ -467,5 +588,18 @@ function SuggestionRow({ suggestion }: { suggestion: Suggestion }) {
         </div>
       </div>
     </li>
+  );
+}
+
+function AxisPill({ kind, value }: { kind: 'season' | 'theme' | 'style'; value: string }) {
+  const tone = kind === 'season'
+    ? 'border-amber-400/50 bg-amber-500/10 text-amber-100'
+    : kind === 'theme'
+      ? 'border-brand-400/50 bg-brand-500/10 text-brand-100'
+      : 'border-emerald-400/50 bg-emerald-500/10 text-emerald-100';
+  return (
+    <span className={cls('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium', tone)}>
+      {value}
+    </span>
   );
 }
