@@ -117,7 +117,7 @@ function DetailModalBody({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 px-4 py-10 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 px-2 py-4 backdrop-blur-sm sm:px-4 sm:py-10" onClick={onClose}>
       {/* Edge prev/next click zones — large but unobtrusive. */}
       {hasPrev && (
         <button

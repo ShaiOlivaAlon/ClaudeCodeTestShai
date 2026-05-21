@@ -12,7 +12,7 @@ export function Gallery() {
   const generations = state.generations;
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden border-l border-ink-800 bg-ink-900">
+    <aside className="flex h-full flex-col overflow-hidden bg-ink-900 lg:border-l lg:border-ink-800">
       <div className="flex items-center justify-between border-b border-ink-800 px-4 py-3">
         <div>
           <div className="font-display text-sm font-semibold uppercase tracking-wider text-ink-100">Gallery</div>

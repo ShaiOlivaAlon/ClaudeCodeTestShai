@@ -175,7 +175,7 @@ export function Modal({ open, onClose, title, children, wide }: {
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-10 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-2 py-4 backdrop-blur-sm sm:px-4 sm:py-10" onClick={onClose}>
       <div
         className={cls('relative w-full rounded-2xl border border-ink-700 bg-ink-900 shadow-soft', wide ? 'max-w-4xl' : 'max-w-xl')}
         onClick={(e) => e.stopPropagation()}
@@ -226,7 +226,7 @@ export function Toast({ toast, onClose }: { toast: { kind: 'info' | 'success' | 
     : toast.kind === 'success' ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-100'
     : 'border-brand-400/60 bg-brand-500/10 text-brand-100';
   return (
-    <div className={cls('fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-lg border px-4 py-2 text-sm shadow-soft', tone)}>
+    <div className={cls('fixed bottom-20 left-1/2 z-[60] -translate-x-1/2 rounded-lg border px-4 py-2 text-sm shadow-soft lg:bottom-4', tone)}>
       <div className="flex items-center gap-3">
         <span>{toast.message}</span>
         <button onClick={onClose} className="text-current opacity-70 hover:opacity-100"><X size={14} /></button>
