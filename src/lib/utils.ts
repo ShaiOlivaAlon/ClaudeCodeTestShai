@@ -99,3 +99,57 @@ export function shortText(s: string, max = 90): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 1) + '…';
 }
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = src.startsWith('data:') ? '' : 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = src;
+  });
+}
+
+/** Composite a (potentially transparent) image onto a solid colour and return a PNG data URL.
+ *  Useful when feeding a transparent layer into APIs that expect an opaque image (e.g. inpaint). */
+export async function compositeOnSolid(src: string, color = '#ffffff'): Promise<string> {
+  const img = await loadImageElement(src);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+/** Composite a transparent sculpture over a background image at the given normalised transform
+ *  (x, y in 0..1 of the canvas; scale = sculpture height as fraction of canvas height). Returns a
+ *  PNG data URL of the flattened result. */
+export async function flattenComposite(opts: {
+  backgroundUrl: string;
+  sculptureUrl?: string;
+  transform?: { x: number; y: number; scale: number };
+  /** Final width in pixels. Height is derived from the background's aspect ratio. */
+  width?: number;
+}): Promise<string> {
+  const bg = await loadImageElement(opts.backgroundUrl);
+  const targetW = opts.width ?? bg.naturalWidth;
+  const targetH = Math.round(targetW * (bg.naturalHeight / bg.naturalWidth));
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(bg, 0, 0, targetW, targetH);
+  if (opts.sculptureUrl) {
+    const sc = await loadImageElement(opts.sculptureUrl);
+    const t = opts.transform ?? { x: 0.5, y: 0.5, scale: 0.8 };
+    const scHeight = targetH * t.scale;
+    const scWidth = scHeight * (sc.naturalWidth / sc.naturalHeight);
+    const cx = t.x * targetW;
+    const cy = t.y * targetH;
+    ctx.drawImage(sc, cx - scWidth / 2, cy - scHeight / 2, scWidth, scHeight);
+  }
+  return canvas.toDataURL('image/png');
+}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Box, Download, FileImage, Image as ImageIcon, Layers, Plus, Save, Sparkles, Trash2, X,
@@ -6,13 +6,14 @@ import {
 import { useStore } from '../state/store';
 import { ASPECT_RATIOS } from '../lib/models';
 import { SCULPTURE_MATERIALS, findMaterial } from '../lib/materials';
-import { generateImage, generateImageInpaint } from '../lib/api';
+import { generateImage, generateImageInpaint, removeBackground } from '../lib/api';
 import { deleteGameProject, putGameProject } from '../lib/storage';
 import { exportGameProjectZip } from '../lib/projectExport';
-import { cls, uid } from '../lib/utils';
-import type { AspectRatio, GameLayer, GameProject } from '../types';
+import { cls, compositeOnSolid, uid } from '../lib/utils';
+import type { AspectRatio, GameLayer, GameProject, LayerTransform } from '../types';
 import { Button, Card, Field, SectionHeader, Select, Spinner, TextInput, Textarea } from './ui';
 import { MaskCanvas, type MaskCanvasHandle } from './MaskCanvas';
+import { COMPOSITE_DEFAULTS, CompositeCanvas } from './CompositeCanvas';
 
 function emptyProject(): GameProject {
   const now = Date.now();
@@ -29,8 +30,11 @@ function emptyProject(): GameProject {
   };
 }
 
-/** Top-level panel: lists existing projects, lets the user start a new one,
- *  or opens the editor for the active project. */
+function aspectRatioWH(id: AspectRatio): number {
+  const ar = ASPECT_RATIOS.find((a) => a.id === id) ?? ASPECT_RATIOS[0];
+  return ar.w / ar.h;
+}
+
 export function GameFeature() {
   const { state, dispatch } = useStore();
   const active = state.gameProjects.find((p) => p.id === state.activeGameProjectId);
@@ -51,7 +55,7 @@ export function GameFeature() {
       <div className="flex items-center justify-between gap-3 border-b border-ink-800 px-3 py-2 sm:px-5 sm:py-3">
         <div className="min-w-0">
           <div className="font-display text-sm font-semibold uppercase tracking-wider text-ink-100">Game feature</div>
-          <div className="truncate text-xs text-ink-400">Sculpture-cutting projects: background + material + layered sculpture states.</div>
+          <div className="truncate text-xs text-ink-400">Layered sculpture projects: background + draggable transparent sculpture + cut states.</div>
         </div>
         <Button size="sm" onClick={newProject}><Plus size={14} /> New project</Button>
       </div>
@@ -63,8 +67,8 @@ export function GameFeature() {
               <Layers size={28} className="text-brand-300" />
               <div className="text-sm font-medium text-white">No projects yet</div>
               <p className="max-w-md text-xs text-ink-400">
-                Each game project bundles a background image and a sequence of sculpture states — players
-                "cut" through the states in your game. Create one to start.
+                Each project gives you a background image + a transparent sculpture you can drag and resize
+                over it. Add cut layers to create a sequence the game cycles through as players cut pieces away.
               </p>
               <Button size="sm" onClick={newProject}><Plus size={14} /> New project</Button>
             </div>
@@ -124,9 +128,8 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
 
   const apiKeys = state.settings.apiKeys;
   const imageProvider = apiKeys.image?.provider;
-  const canInpaint = imageProvider === 'fal';
+  const onFal = imageProvider === 'fal';
 
-  // Persist to IDB + reducer whenever the project changes.
   function commit(next: GameProject) {
     const updated = { ...next, updatedAt: Date.now() };
     setProject(updated);
@@ -136,6 +139,12 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
 
   function update<K extends keyof GameProject>(patch: Pick<GameProject, K>) {
     commit({ ...project, ...patch });
+  }
+
+  function setLayerTransform(idx: number, t: LayerTransform) {
+    if (idx < 0) return;
+    const next = project.sculptureLayers.map((l, i) => (i === idx ? { ...l, transform: t } : l));
+    commit({ ...project, sculptureLayers: next });
   }
 
   async function generateBackground() {
@@ -166,20 +175,29 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
         prompt: layer.prompt,
         aspectRatio: project.aspectRatio,
       });
-      commit({ ...project, background: { ...layer, status: 'done', imageUrl: url } });
+      setProject((cur) => {
+        const next = { ...cur, background: { ...layer, status: 'done' as const, imageUrl: url }, updatedAt: Date.now() };
+        dispatch({ type: 'gameProjects/upsert', project: next });
+        putGameProject(next).catch(() => {});
+        return next;
+      });
       dispatch({ type: 'ui/toast', toast: { kind: 'success', message: 'Background ready.' } });
     } catch (err: any) {
-      commit({ ...project, background: { ...layer, status: 'error', error: err?.message ?? 'failed' } });
+      setProject((cur) => {
+        const next = { ...cur, background: { ...layer, status: 'error' as const, error: err?.message ?? 'failed' }, updatedAt: Date.now() };
+        dispatch({ type: 'gameProjects/upsert', project: next });
+        putGameProject(next).catch(() => {});
+        return next;
+      });
       dispatch({ type: 'ui/toast', toast: { kind: 'error', message: err?.message ?? 'Background failed.' } });
     }
   }
 
-  function sculptureBasePrompt(extra = ''): string {
+  function sculptureBasePrompt(): string {
     const mat = findMaterial(project.material);
     const materialPhrase = mat?.promptFragment ?? project.material;
     const subject = project.sculptureSubject.trim() || 'a heroic figure';
-    const bg = project.backgroundPrompt.trim() ? ` Set in: ${project.backgroundPrompt.trim()}.` : '';
-    return `A complete sculpture of ${subject}, made of ${materialPhrase}. Single hero subject, centered, dramatic studio lighting, sharp focus, marketing-grade quality.${bg}${extra ? ' ' + extra : ''}`;
+    return `A complete sculpture of ${subject}, made of ${materialPhrase}. Isolated on a plain solid white seamless backdrop, no scenery, no props, no shadows on the floor. Single hero subject, centered, full body visible, dramatic studio lighting, sharp focus, marketing-grade quality.`;
   }
 
   async function generateBaseSculpture() {
@@ -189,6 +207,11 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
     }
     if (!apiKeys.image?.key) {
       dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add an Image API key in Settings.' } });
+      dispatch({ type: 'ui/openSettings', open: true });
+      return;
+    }
+    if (!onFal) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Sculpture generation needs fal.ai as the Image provider so we can cut a transparent background.' } });
       dispatch({ type: 'ui/openSettings', open: true });
       return;
     }
@@ -202,21 +225,47 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
       imageModel: model,
       status: 'generating',
       createdAt: Date.now(),
+      transform: { ...COMPOSITE_DEFAULTS },
     };
     commit({ ...project, sculptureLayers: [layer] });
     setActiveLayerIdx(0);
     try {
-      const { url } = await generateImage({
+      const { url: opaqueUrl } = await generateImage({
         apiKeys,
         model,
         prompt,
         aspectRatio: project.aspectRatio,
       });
-      commit({ ...project, sculptureLayers: [{ ...layer, status: 'done', imageUrl: url }] });
-      dispatch({ type: 'ui/toast', toast: { kind: 'success', message: 'Base sculpture ready — paint cuts to add states.' } });
+      dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Cutting out the background…' } });
+      const { url: transparentUrl } = await removeBackground({ apiKeys, imageDataUrl: opaqueUrl });
+      setProject((cur) => {
+        const next = {
+          ...cur,
+          sculptureLayers: [{
+            ...layer,
+            status: 'done' as const,
+            imageUrl: transparentUrl,
+            isTransparent: true,
+          }],
+          updatedAt: Date.now(),
+        };
+        dispatch({ type: 'gameProjects/upsert', project: next });
+        putGameProject(next).catch(() => {});
+        return next;
+      });
+      dispatch({ type: 'ui/toast', toast: { kind: 'success', message: 'Sculpture ready — drag it on the canvas to position.' } });
     } catch (err: any) {
-      commit({ ...project, sculptureLayers: [{ ...layer, status: 'error', error: err?.message ?? 'failed' }] });
-      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: err?.message ?? 'Base sculpture failed.' } });
+      setProject((cur) => {
+        const next = {
+          ...cur,
+          sculptureLayers: [{ ...layer, status: 'error' as const, error: err?.message ?? 'failed' }],
+          updatedAt: Date.now(),
+        };
+        dispatch({ type: 'gameProjects/upsert', project: next });
+        putGameProject(next).catch(() => {});
+        return next;
+      });
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: err?.message ?? 'Sculpture generation failed.' } });
     }
   }
 
@@ -245,6 +294,7 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
 
   const baseSculpture = project.sculptureLayers[0];
   const activeLayer = activeLayerIdx >= 0 ? project.sculptureLayers[activeLayerIdx] : null;
+  const activeTransform = activeLayer?.transform ?? COMPOSITE_DEFAULTS;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -270,6 +320,27 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4">
+        {!onFal && (
+          <Card className="border-amber-500/50 bg-amber-500/10">
+            <div className="flex items-start gap-2 text-[12px] text-amber-100">
+              <Sparkles size={14} className="mt-0.5 shrink-0" />
+              <div>
+                <div className="font-semibold">Game Feature needs fal.ai as the Image provider.</div>
+                <p className="mt-0.5 text-[11px] text-amber-200/90">
+                  We use fal.ai's background-removal endpoint to cut the sculpture into a transparent PNG, and
+                  FLUX Pro Fill to generate cut layers. Open Settings to switch.
+                </p>
+                <button
+                  className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-400/60 px-2 py-1 text-[11px] text-amber-100 hover:bg-amber-500/20"
+                  onClick={() => dispatch({ type: 'ui/openSettings', open: true })}
+                >
+                  Open Settings →
+                </button>
+              </div>
+            </div>
+          </Card>
+        )}
+
         <Card>
           <SectionHeader title="Setup" subtitle="Material, subject, and target aspect ratio for the whole project." />
           <div className="grid gap-3 md:grid-cols-2">
@@ -354,29 +425,30 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
 
         <Card>
           <SectionHeader
-            title="Sculpture layers"
-            subtitle="Each layer is a state of the sculpture — players cycle through them as they cut."
+            title="Compose & cut"
+            subtitle="Drag the sculpture to position it; scroll or use the slider to scale. Add cuts to create more states."
             action={baseSculpture?.imageUrl ? (
               <Button
                 size="sm"
                 variant="secondary"
                 onClick={() => setCutOpen(true)}
-                disabled={!canInpaint}
-                title={!canInpaint ? 'Switch your Image provider to fal.ai to add cut layers.' : 'Add a cut to the current state'}
+                disabled={!onFal || (activeLayer?.status !== 'done')}
+                title={!onFal ? 'Switch your Image provider to fal.ai to add cut layers.' : 'Add a cut to the currently selected state'}
               >
                 <Plus size={14} /> Add cut layer
               </Button>
             ) : null}
           />
+
           {!baseSculpture ? (
             <div className="rounded-md border border-dashed border-ink-700 p-4 text-center">
-              <p className="text-xs text-ink-400">Generate the base sculpture (layer 1) first.</p>
-              <Button size="sm" className="mt-2" onClick={generateBaseSculpture} disabled={baseSculpture && (baseSculpture as GameLayer).status === 'generating'}>
-                <Sparkles size={14} /> Generate base sculpture
+              <p className="text-xs text-ink-400">Generate the sculpture (state 1) to start composing.</p>
+              <Button size="sm" className="mt-2" onClick={generateBaseSculpture} disabled={!onFal || baseSculpture && (baseSculpture as GameLayer).status === 'generating'}>
+                <Sparkles size={14} /> Generate sculpture
               </Button>
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-[260px_minmax(0,1fr)]">
+            <div className="grid gap-3 md:grid-cols-[230px_minmax(0,1fr)]">
               <div className="space-y-2">
                 {project.sculptureLayers.map((layer, idx) => (
                   <button
@@ -387,9 +459,16 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
                       activeLayerIdx === idx ? 'border-brand-400 bg-brand-500/10' : 'border-ink-700 hover:border-ink-500'
                     )}
                   >
-                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded border border-ink-700 bg-ink-900">
+                    <div
+                      className="h-12 w-12 shrink-0 overflow-hidden rounded border border-ink-700"
+                      style={{
+                        backgroundImage: 'linear-gradient(45deg, #2a2a35 25%, transparent 25%), linear-gradient(-45deg, #2a2a35 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a35 75%), linear-gradient(-45deg, transparent 75%, #2a2a35 75%)',
+                        backgroundSize: '10px 10px',
+                        backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
+                      }}
+                    >
                       {layer.imageUrl ? (
-                        <img src={layer.imageUrl} alt="" className="h-full w-full object-cover" />
+                        <img src={layer.imageUrl} alt="" className="h-full w-full object-contain" />
                       ) : layer.status === 'generating' ? (
                         <div className="flex h-full w-full items-center justify-center"><Spinner size={12} className="text-brand-300" /></div>
                       ) : layer.status === 'error' ? (
@@ -416,28 +495,23 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
                   size="sm"
                   variant="ghost"
                   onClick={generateBaseSculpture}
-                  disabled={baseSculpture.status === 'generating'}
+                  disabled={!onFal || baseSculpture.status === 'generating'}
                   className="w-full"
-                  title="Regenerate the base sculpture (deletes all cut states)"
+                  title="Regenerate the base sculpture (replaces all cut states)"
                 >
-                  <Sparkles size={14} /> Regenerate base
+                  <Sparkles size={14} /> Regenerate sculpture
                 </Button>
               </div>
-              <div className="overflow-hidden rounded-md border border-ink-700 bg-ink-900">
-                {activeLayer?.imageUrl ? (
-                  <img src={activeLayer.imageUrl} alt="" className="h-full max-h-[420px] w-full object-contain" />
-                ) : activeLayer?.status === 'generating' ? (
-                  <div className="flex aspect-square items-center justify-center"><Spinner size={20} className="text-brand-300" /></div>
-                ) : (
-                  <div className="flex aspect-square items-center justify-center text-xs text-ink-400">No preview</div>
-                )}
-              </div>
+
+              <CompositeCanvas
+                backgroundUrl={project.background?.imageUrl}
+                sculptureUrl={activeLayer?.imageUrl}
+                transform={activeTransform}
+                onTransformChange={(t) => setLayerTransform(activeLayerIdx, t)}
+                aspectRatio={aspectRatioWH(project.aspectRatio)}
+                locked={activeLayer?.status !== 'done'}
+              />
             </div>
-          )}
-          {!canInpaint && baseSculpture?.imageUrl && (
-            <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-              Cut layers use fal.ai's FLUX Pro Fill inpainting. Switch your Image provider to fal.ai in Settings to enable "Add cut layer".
-            </p>
           )}
         </Card>
       </div>
@@ -452,7 +526,7 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
               setCutOpen(false);
               const newIdx = project.sculptureLayers.length;
               const mat = findMaterial(project.material);
-              const prompt = `Same ${mat?.promptFragment ?? project.material} sculpture, but with the painted region broken off — clean break, exposed sculpture interior, missing piece, do not add anything new in its place. Keep the rest of the sculpture and scene identical.${cutNote ? ' ' + cutNote : ''}`;
+              const prompt = `Same ${mat?.promptFragment ?? project.material} sculpture isolated on plain white backdrop, but with the painted region broken off — clean break, exposed sculpture interior, missing piece, do not add anything new in its place. Keep the rest of the sculpture identical. ${cutNote ? ' ' + cutNote : ''}`;
               const layer: GameLayer = {
                 id: uid('layer'),
                 kind: 'sculpture',
@@ -462,24 +536,30 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
                 imageModel: 'fal-ai/flux-pro/v1/fill',
                 status: 'generating',
                 createdAt: Date.now(),
+                transform: { ...activeTransform },
               };
               commit({ ...project, sculptureLayers: [...project.sculptureLayers, layer] });
               setActiveLayerIdx(newIdx);
               try {
-                // Load the source as a data URL so the inpaint cache key is stable.
-                const sourceDataUrl = await urlToDataUrl(activeLayer.imageUrl!);
-                const { url } = await generateImageInpaint({
+                // The active layer is transparent; FLUX Fill expects an opaque source, so flatten it
+                // onto white first. The mask was painted against this same composite (the modal also
+                // composites on white), so coordinates align.
+                const sourceOnWhite = await compositeOnSolid(activeLayer.imageUrl!, '#ffffff');
+                const { url: editedOpaqueUrl } = await generateImageInpaint({
                   apiKeys,
-                  sourceImageDataUrl: sourceDataUrl,
+                  sourceImageDataUrl: sourceOnWhite,
                   maskDataUrl,
                   prompt,
                   aspectRatio: project.aspectRatio,
                 });
-                // Reflect against latest project state in case of intervening edits.
+                // Cut the background back out so the new state is also transparent.
+                const { url: transparentUrl } = await removeBackground({ apiKeys, imageDataUrl: editedOpaqueUrl });
                 setProject((cur) => {
                   const next = {
                     ...cur,
-                    sculptureLayers: cur.sculptureLayers.map((l) => l.id === layer.id ? { ...l, status: 'done' as const, imageUrl: url } : l),
+                    sculptureLayers: cur.sculptureLayers.map((l) =>
+                      l.id === layer.id ? { ...l, status: 'done' as const, imageUrl: transparentUrl, isTransparent: true } : l,
+                    ),
                     updatedAt: Date.now(),
                   };
                   dispatch({ type: 'gameProjects/upsert', project: next });
@@ -491,7 +571,9 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
                 setProject((cur) => {
                   const next = {
                     ...cur,
-                    sculptureLayers: cur.sculptureLayers.map((l) => l.id === layer.id ? { ...l, status: 'error' as const, error: err?.message ?? 'failed' } : l),
+                    sculptureLayers: cur.sculptureLayers.map((l) =>
+                      l.id === layer.id ? { ...l, status: 'error' as const, error: err?.message ?? 'failed' } : l,
+                    ),
                     updatedAt: Date.now(),
                   };
                   dispatch({ type: 'gameProjects/upsert', project: next });
@@ -508,18 +590,6 @@ function ProjectEditor({ project: initial, onBack }: { project: GameProject; onB
   );
 }
 
-async function urlToDataUrl(url: string): Promise<string> {
-  if (url.startsWith('data:')) return url;
-  const res = await fetch(url);
-  const blob = await res.blob();
-  return await new Promise<string>((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(String(fr.result));
-    fr.onerror = () => reject(fr.error);
-    fr.readAsDataURL(blob);
-  });
-}
-
 // --- Cut layer modal -------------------------------------------------------
 
 function CutLayerModal({
@@ -533,6 +603,18 @@ function CutLayerModal({
   const maskRef = useRef<MaskCanvasHandle>(null);
   const [cutNote, setCutNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [whiteSrc, setWhiteSrc] = useState<string | null>(null);
+
+  // The source layer is transparent, so we composite it onto white for the painter.
+  // The actual inpaint API call (in the parent) flattens with the same colour, so mask
+  // coordinates align.
+  useEffect(() => {
+    let cancelled = false;
+    compositeOnSolid(sourceImageUrl, '#ffffff')
+      .then((url) => { if (!cancelled) setWhiteSrc(url); })
+      .catch(() => { if (!cancelled) setWhiteSrc(sourceImageUrl); });
+    return () => { cancelled = true; };
+  }, [sourceImageUrl]);
 
   async function apply() {
     if (!maskRef.current?.hasContent()) return;
@@ -562,13 +644,19 @@ function CutLayerModal({
           </button>
         </div>
         <div className="grid gap-4 p-5 lg:grid-cols-[1.6fr_1fr]">
-          <MaskCanvas ref={maskRef} imageUrl={sourceImageUrl} />
+          {whiteSrc ? (
+            <MaskCanvas ref={maskRef} imageUrl={whiteSrc} />
+          ) : (
+            <div className="flex aspect-square items-center justify-center rounded-lg border border-ink-700 bg-ink-900">
+              <Spinner size={20} className="text-brand-300" />
+            </div>
+          )}
           <div className="space-y-3">
             <div>
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-200">Paint over the piece to cut</div>
               <p className="text-[11px] text-ink-400">
-                Painted area becomes a clean break in the {findMaterial(material)?.label ?? material}. The rest of the
-                sculpture and the background stay the same.
+                The painted area becomes a clean break in the {findMaterial(material)?.label ?? material}. The new
+                state stays a transparent PNG.
               </p>
             </div>
             <div>
@@ -579,17 +667,20 @@ function CutLayerModal({
                 placeholder='e.g. "right arm removed" / "missing crown"'
               />
               <p className="mt-1 text-[10px] text-ink-400">
-                Shown on the layer chip and stored in the project manifest. Doesn't have to be long.
+                Shown on the layer chip and stored in the project manifest.
               </p>
             </div>
             <div className="rounded-md border border-ink-700 bg-ink-850 p-3 text-[11px] text-ink-300">
-              <div className="mb-1 font-semibold text-ink-100">Tip</div>
-              Each cut layer is generated from the <em>currently selected</em> state, so you can chain edits — cut the
-              arm, then cut the head, then cut the torso.
+              <div className="mb-1 font-semibold text-ink-100">How it works</div>
+              <ol className="list-decimal space-y-0.5 pl-4">
+                <li>Inpaint the painted region of the sculpture (FLUX Pro Fill).</li>
+                <li>Cut the background out again (rembg).</li>
+                <li>Save as a new transparent PNG state.</li>
+              </ol>
             </div>
             <div className="flex items-center justify-end gap-2">
               <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
-              <Button size="sm" onClick={apply} disabled={busy}>
+              <Button size="sm" onClick={apply} disabled={busy || !whiteSrc}>
                 {busy ? <Spinner size={14} /> : <Save size={14} />}
                 {busy ? 'Cutting…' : 'Apply cut'}
               </Button>
@@ -600,4 +691,3 @@ function CutLayerModal({
     </div>
   );
 }
-

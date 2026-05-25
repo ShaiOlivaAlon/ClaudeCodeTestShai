@@ -96,6 +96,15 @@ export type GameLayerKind = 'background' | 'sculpture';
 
 export type GameLayerStatus = 'queued' | 'generating' | 'done' | 'error';
 
+/** Position + scale of a sculpture layer when composited over the background.
+ *  x, y are normalised coordinates (0..1) of the sculpture's centre relative to the
+ *  background canvas. scale is the sculpture's height as a fraction of the canvas height. */
+export interface LayerTransform {
+  x: number;
+  y: number;
+  scale: number;
+}
+
 export interface GameLayer {
   id: string;
   kind: GameLayerKind;
@@ -109,6 +118,10 @@ export interface GameLayer {
   createdAt: number;
   /** For sculpture layers >= 1: short description of the cut applied this step. */
   cutNote?: string;
+  /** Position + scale over the background (sculpture layers only). */
+  transform?: LayerTransform;
+  /** True when the layer has been alpha-cut (transparent PNG). */
+  isTransparent?: boolean;
 }
 
 /** A game-feature project: a background image + an ordered sequence of sculpture states. */

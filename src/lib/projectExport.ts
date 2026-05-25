@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import type { GameProject } from '../types';
+import { flattenComposite } from './utils';
 
 async function dataUrlOrUrlToBlob(src: string): Promise<Blob> {
   if (src.startsWith('data:')) {
@@ -27,6 +28,9 @@ interface ManifestLayer {
   cutNote?: string;
   imageModel: string;
   createdAt: number;
+  /** Normalised position + scale at which to composite this state over the background. */
+  transform?: { x: number; y: number; scale: number };
+  isTransparent?: boolean;
 }
 
 export interface ProjectManifest {
@@ -70,7 +74,11 @@ export async function exportGameProjectZip(project: GameProject): Promise<{ blob
     };
   }
 
-  // Layers in order: index 0 is the full sculpture.
+  // Sculpture states in order: index 0 is the full sculpture. We export each one twice:
+  //   - sculpture-state-NN.png  : transparent PNG (the layer itself)
+  //   - composite-state-NN.png  : sculpture pre-composited onto the background at the saved
+  //                                position + scale, so a non-programmable game tool can pick
+  //                                up the flat image and use it directly.
   const ordered = [...project.sculptureLayers].sort((a, b) => a.index - b.index);
   for (const layer of ordered) {
     if (!layer.imageUrl) continue;
@@ -84,7 +92,24 @@ export async function exportGameProjectZip(project: GameProject): Promise<{ blob
       cutNote: layer.cutNote,
       imageModel: layer.imageModel,
       createdAt: layer.createdAt,
+      transform: layer.transform,
+      isTransparent: !!layer.isTransparent,
     });
+
+    if (project.background?.imageUrl && layer.isTransparent) {
+      try {
+        const flatDataUrl = await flattenComposite({
+          backgroundUrl: project.background.imageUrl,
+          sculptureUrl: layer.imageUrl,
+          transform: layer.transform,
+          width: 1024,
+        });
+        const compFile = `composite-state-${num}.png`;
+        zip.file(compFile, await (await fetch(flatDataUrl)).blob());
+      } catch {
+        // Non-fatal — the transparent PNG is still in the ZIP.
+      }
+    }
   }
 
   zip.file('manifest.json', JSON.stringify(manifest, null, 2));
@@ -102,10 +127,15 @@ export async function exportGameProjectZip(project: GameProject): Promise<{ blob
       ``,
       `Files:`,
       `  - manifest.json           — structured metadata for the game runtime`,
+      `                              (includes per-state x/y/scale to composite the`,
+      `                              transparent sculpture over the background)`,
       `  - background.*            — single background image`,
-      `  - sculpture-state-NN.*    — sculpture states, ordered from full (01) to`,
-      `                              most-reduced. Cycle through these as the`,
-      `                              player "cuts" pieces away.`,
+      `  - sculpture-state-NN.*    — TRANSPARENT PNG of the sculpture at each state`,
+      `                              (use these in your engine + composite over the`,
+      `                              background at the position from the manifest)`,
+      `  - composite-state-NN.png  — pre-flattened sculpture-on-background at the`,
+      `                              saved position + scale, for tools that need a`,
+      `                              single image per state`,
       ``,
     ].join('\n'),
   );

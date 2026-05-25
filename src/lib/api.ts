@@ -767,6 +767,33 @@ export function makeAnimatePrompt(suggestion: { title: string; description: stri
   return buildAnimatePromptHint(suggestion);
 }
 
+// ----- Background removal (transparent PNG) -------------------------------
+
+const REMBG_MODEL = 'fal-ai/imageutils/rembg';
+
+export interface RembgInput {
+  apiKeys: ApiKeys;
+  imageDataUrl: string;
+  onProgress?: (status: string) => void;
+}
+
+/** Remove the background of an image, returning a transparent PNG.
+ *  Uses fal.ai's rembg endpoint — requires the user's Image role to be
+ *  configured with a fal.ai key (same as inpainting). */
+export async function removeBackground(opts: RembgInput): Promise<{ url: string }> {
+  const role = getRole(opts.apiKeys, 'image');
+  if (role.provider !== 'fal') {
+    throw new Error('Background removal currently requires fal.ai as the Image provider.');
+  }
+  const publicUrl = await falUpload(opts.imageDataUrl, role.key, 'subject.png');
+  const submit = await falSubmit(REMBG_MODEL, { image_url: publicUrl }, role.key);
+  await falPoll(submit.status_url, role.key, opts.onProgress);
+  const out = await falResult<any>(submit.response_url, role.key);
+  const url: string | undefined = out?.image?.url ?? out?.images?.[0]?.url ?? out?.url;
+  if (!url) throw new Error('Background removal returned no image.');
+  return { url };
+}
+
 // ----- Inpainting (region edit) -------------------------------------------
 
 const INPAINT_MODEL = 'fal-ai/flux-pro/v1/fill';
