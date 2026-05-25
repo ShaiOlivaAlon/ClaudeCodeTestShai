@@ -2,10 +2,10 @@ import { useEffect, useReducer, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Crown, LayoutGrid, Wand2 } from 'lucide-react';
 import { initialState, reducer, StoreContext } from './state/store';
-import { listAssets, listBriefPresets, listGenerations, loadSettings } from './lib/storage';
+import { listAssets, listBriefPresets, listGameProjects, listGenerations, loadSettings } from './lib/storage';
 import { Header } from './components/Header';
 import { AssetLibrary } from './components/AssetLibrary';
-import { BriefBuilder } from './components/BriefBuilder';
+import { MainPanel } from './components/MainPanel';
 import { Gallery } from './components/Gallery';
 import { SetupWizard } from './components/SetupWizard';
 import { SettingsModal } from './components/SettingsModal';
@@ -30,14 +30,16 @@ export function App() {
     (async () => {
       const settings = loadSettings();
       dispatch({ type: 'settings/set', settings });
-      const [assets, generations, presets] = await Promise.all([
+      const [assets, generations, presets, gameProjects] = await Promise.all([
         listAssets(),
         listGenerations(),
         listBriefPresets(),
+        listGameProjects(),
       ]);
       dispatch({ type: 'assets/set', assets });
       dispatch({ type: 'generations/set', generations });
       dispatch({ type: 'briefPresets/set', presets });
+      dispatch({ type: 'gameProjects/set', projects: gameProjects });
 
       dispatch({
         type: 'brief/patch',
@@ -79,7 +81,7 @@ export function App() {
             transition={{ delay: 0.12, duration: 0.35, ease: 'easeOut' }}
             className={cls('h-full min-h-0 min-w-0 overflow-hidden', mobileTab === 'brief' ? 'block' : 'hidden', 'lg:block')}
           >
-            <BriefBuilder />
+            <MainPanel />
           </motion.div>
           <motion.div
             variants={PANEL_VARIANTS}

@@ -1,12 +1,13 @@
-import type { ApiKeys, Asset, BriefPreset, Generation, Settings } from '../types';
+import type { ApiKeys, Asset, BriefPreset, GameProject, Generation, Settings } from '../types';
 
 const DB_NAME = 'playtika-artist-studio';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_ASSETS = 'assets';
 const STORE_GENERATIONS = 'generations';
 const STORE_PRESETS = 'briefPresets';
 const STORE_IMAGE_CACHE = 'imageCache';
 const STORE_VIDEO_CACHE = 'videoCache';
+const STORE_GAME_PROJECTS = 'gameProjects';
 const SETTINGS_KEY = 'pas.settings.v1';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -31,6 +32,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_VIDEO_CACHE)) {
         db.createObjectStore(STORE_VIDEO_CACHE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORE_GAME_PROJECTS)) {
+        db.createObjectStore(STORE_GAME_PROJECTS, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -255,3 +259,35 @@ export const getCachedImage = (key: string) => cacheGet(STORE_IMAGE_CACHE, key);
 export const putCachedImage = (key: string, url: string) => cachePut(STORE_IMAGE_CACHE, key, url);
 export const getCachedVideo = (key: string) => cacheGet(STORE_VIDEO_CACHE, key);
 export const putCachedVideo = (key: string, url: string) => cachePut(STORE_VIDEO_CACHE, key, url);
+
+// --- Game projects ---------------------------------------------------------
+
+export async function listGameProjects(): Promise<GameProject[]> {
+  return tx<GameProject[]>(STORE_GAME_PROJECTS, 'readonly', (s) => {
+    return new Promise<GameProject[]>((resolve, reject) => {
+      const req = s.getAll();
+      req.onsuccess = () => resolve((req.result as GameProject[]).sort((a, b) => b.updatedAt - a.updatedAt));
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function putGameProject(p: GameProject): Promise<void> {
+  await tx<void>(STORE_GAME_PROJECTS, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.put(p);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function deleteGameProject(id: string): Promise<void> {
+  await tx<void>(STORE_GAME_PROJECTS, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}

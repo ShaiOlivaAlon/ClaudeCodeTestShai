@@ -90,6 +90,42 @@ export interface BriefPreset {
   createdAt: number;
 }
 
+// --- Game Feature: layered sculpture projects ------------------------------
+
+export type GameLayerKind = 'background' | 'sculpture';
+
+export type GameLayerStatus = 'queued' | 'generating' | 'done' | 'error';
+
+export interface GameLayer {
+  id: string;
+  kind: GameLayerKind;
+  /** For sculpture layers: 0 = full, increasing = progressively more removed. */
+  index: number;
+  imageUrl?: string;
+  prompt: string;
+  imageModel: string;
+  status: GameLayerStatus;
+  error?: string;
+  createdAt: number;
+  /** For sculpture layers >= 1: short description of the cut applied this step. */
+  cutNote?: string;
+}
+
+/** A game-feature project: a background image + an ordered sequence of sculpture states. */
+export interface GameProject {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  aspectRatio: AspectRatio;
+  material: string;
+  sculptureSubject: string;
+  backgroundPrompt: string;
+  background?: GameLayer;
+  /** Ordered from full (index 0) to most-reduced (last). */
+  sculptureLayers: GameLayer[];
+}
+
 export type Provider = 'google' | 'anthropic' | 'fal' | 'openai' | 'azure-openai';
 
 export type Role = 'text' | 'image' | 'video';
