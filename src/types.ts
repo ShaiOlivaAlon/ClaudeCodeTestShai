@@ -139,7 +139,7 @@ export interface GameProject {
   sculptureLayers: GameLayer[];
 }
 
-export type Provider = 'google' | 'anthropic' | 'fal' | 'openai' | 'azure-openai';
+export type Provider = 'google' | 'anthropic' | 'fal' | 'openai' | 'azure-openai' | 'litellm';
 
 export type Role = 'text' | 'image' | 'video';
 

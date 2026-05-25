@@ -19,10 +19,11 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
   fal: 'fal.ai',
   openai: 'OpenAI',
   'azure-openai': 'Azure OpenAI',
+  litellm: 'LiteLLM',
 };
 
-export const TEXT_PROVIDERS: Provider[] = ['google', 'anthropic', 'openai', 'azure-openai'];
-export const IMAGE_PROVIDERS: Provider[] = ['google', 'fal', 'openai', 'azure-openai'];
+export const TEXT_PROVIDERS: Provider[] = ['google', 'anthropic', 'openai', 'azure-openai', 'litellm'];
+export const IMAGE_PROVIDERS: Provider[] = ['google', 'fal', 'openai', 'azure-openai', 'litellm'];
 export const VIDEO_PROVIDERS: Provider[] = ['google', 'fal'];
 
 export const TEXT_MODELS: ModelDef[] = [
@@ -39,6 +40,7 @@ export const TEXT_MODELS: ModelDef[] = [
   { id: 'o3-mini',               name: 'o3-mini',               provider: 'openai',    description: 'Reasoning model, faster than o1.' },
   { id: 'o1',                    name: 'o1',                    provider: 'openai',    description: 'Deep reasoning, slow & expensive.' },
   { id: 'azure-deployment',      name: 'Your Azure deployment', provider: 'azure-openai', description: 'Uses the deployment name from your Azure key config.' },
+  { id: 'litellm-default',       name: 'LiteLLM (auto-detected)', provider: 'litellm', description: 'Models exposed by your LiteLLM proxy are detected from /v1/models when you enter the base URL + key.' },
 ];
 
 export const IMAGE_MODELS: ModelDef[] = [
@@ -58,6 +60,7 @@ export const IMAGE_MODELS: ModelDef[] = [
   { id: 'gpt-image-1',                     name: 'GPT Image 1',        provider: 'openai', description: 'OpenAI\'s newest image model — renders text well.', supportsText: true },
   { id: 'dall-e-3',                        name: 'DALL·E 3',           provider: 'openai', description: 'Classic OpenAI image generator.' },
   { id: 'azure-deployment-image',          name: 'Your Azure deployment', provider: 'azure-openai', description: 'Uses the deployment name from your Azure key config (DALL·E 3 or gpt-image-1).' },
+  { id: 'litellm-image-default',           name: 'LiteLLM (auto-detected)', provider: 'litellm', description: 'Image models exposed by your LiteLLM proxy are detected from /v1/models. Heuristics filter by name (dall-e, flux, imagen, recraft, ideogram, stable-diffusion).' },
 ];
 
 export const VIDEO_MODELS: ModelDef[] = [

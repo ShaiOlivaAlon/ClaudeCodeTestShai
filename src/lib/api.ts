@@ -86,6 +86,12 @@ function requireAzureFields(r: RoleKey): { endpoint: string; deployment: string;
   return { endpoint, deployment, apiVersion };
 }
 
+function requireLitellmFields(r: RoleKey): { endpoint: string } {
+  const endpoint = r.endpoint?.trim().replace(/\/$/, '');
+  if (!endpoint) throw new Error('LiteLLM: base URL missing. Open Settings to set it (e.g. https://litellm.example.com).');
+  return { endpoint };
+}
+
 // ----- Anthropic -----------------------------------------------------------
 
 const ANTHROPIC_MODEL_MAP: Record<string, string> = {
@@ -190,6 +196,61 @@ async function openaiImageGenerate(opts: {
   if (item.b64_json) return { url: `data:image/png;base64,${item.b64_json}` };
   if (item.url) return { url: item.url };
   throw new Error('OpenAI Images returned no result.');
+}
+
+// ----- LiteLLM (OpenAI-compatible proxy) -----------------------------------
+
+async function litellmMessage(opts: {
+  apiKey: string;
+  endpoint: string;
+  model: string;
+  system: string;
+  user: string;
+  maxTokens?: number;
+}): Promise<string> {
+  const res = await fetch(`${opts.endpoint}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${opts.apiKey}` },
+    body: JSON.stringify({
+      model: opts.model,
+      messages: [
+        { role: 'system', content: opts.system },
+        { role: 'user', content: opts.user },
+      ],
+      max_tokens: opts.maxTokens ?? 4096,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`LiteLLM API error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content ?? '').trim();
+}
+
+async function litellmImageGenerate(opts: {
+  apiKey: string;
+  endpoint: string;
+  model: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+}): Promise<{ url: string }> {
+  // LiteLLM proxies image generation as OpenAI-compatible. Use the OpenAI size mapping.
+  const size = openaiImageSize(opts.aspectRatio, opts.model);
+  const res = await fetch(`${opts.endpoint}/v1/images/generations`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${opts.apiKey}` },
+    body: JSON.stringify({ model: opts.model, prompt: opts.prompt, size, n: 1 }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`LiteLLM Images error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = await res.json();
+  const item = data.data?.[0] ?? {};
+  if (item.b64_json) return { url: `data:image/png;base64,${item.b64_json}` };
+  if (item.url) return { url: item.url };
+  throw new Error('LiteLLM Images returned no result.');
 }
 
 // ----- Azure OpenAI --------------------------------------------------------
@@ -566,6 +627,10 @@ async function dispatchText(role: RoleKey, model: string, system: string, user: 
       const az = requireAzureFields(role);
       return azureOpenAIMessage({ apiKey: role.key, ...az, system, user, maxTokens });
     }
+    case 'litellm': {
+      const lf = requireLitellmFields(role);
+      return litellmMessage({ apiKey: role.key, ...lf, model, system, user, maxTokens });
+    }
     default:
       throw new Error(`Provider ${role.provider} cannot generate text.`);
   }
@@ -684,6 +749,11 @@ async function dispatchImageGen(opts: ImageGenInput, role: RoleKey): Promise<{ u
   if (role.provider === 'azure-openai') {
     const az = requireAzureFields(role);
     return azureOpenAIImageGenerate({ apiKey: role.key, ...az, prompt: opts.prompt, aspectRatio: opts.aspectRatio });
+  }
+
+  if (role.provider === 'litellm') {
+    const lf = requireLitellmFields(role);
+    return litellmImageGenerate({ apiKey: role.key, ...lf, model: opts.model, prompt: opts.prompt, aspectRatio: opts.aspectRatio });
   }
 
   let referenceUrls: string[] = [];
@@ -904,6 +974,14 @@ export async function pingProvider(provider: Provider, apiKey: string, extra?: {
       // List deployments — works with just the resource key, no deployment name needed.
       const res = await fetch(`${endpoint}/openai/deployments?api-version=${encodeURIComponent(apiVersion)}`, {
         headers: { 'api-key': apiKey },
+      });
+      return res.ok;
+    }
+    if (provider === 'litellm') {
+      const endpoint = extra?.endpoint?.trim().replace(/\/$/, '');
+      if (!endpoint) return false;
+      const res = await fetch(`${endpoint}/v1/models`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
       });
       return res.ok;
     }

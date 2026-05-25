@@ -116,10 +116,46 @@ export interface ProviderModel extends ModelDef {
   isNew: boolean;
 }
 
+interface RawLitellmModel { id: string; created?: number; owned_by?: string }
+
+const litellmMemo = new Map<string, Promise<RawLitellmModel[]>>();
+
+async function doFetchLitellmModels(endpoint: string, apiKey: string): Promise<RawLitellmModel[]> {
+  const url = `${endpoint.replace(/\/$/, '')}/v1/models`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+  if (!res.ok) throw new Error(`LiteLLM /v1/models ${res.status}`);
+  const data = await res.json();
+  return (data?.data ?? []) as RawLitellmModel[];
+}
+
+function fetchLitellmModels(endpoint: string, apiKey: string): Promise<RawLitellmModel[]> {
+  const key = `${endpoint}::${apiKey}`;
+  if (litellmMemo.has(key)) return litellmMemo.get(key)!;
+  const p = doFetchLitellmModels(endpoint, apiKey).catch((err) => {
+    litellmMemo.delete(key);
+    throw err;
+  });
+  litellmMemo.set(key, p);
+  return p;
+}
+
+/** Best-effort classification of a LiteLLM model id by name. Many proxies don't
+ *  expose modality in /v1/models, so we filter heuristically. */
+function classifyLitellmModel(id: string): Role | null {
+  const s = id.toLowerCase();
+  if (s.includes('dall-e') || s.includes('gpt-image') || s.includes('imagen') ||
+      s.includes('flux') || s.includes('recraft') || s.includes('ideogram') ||
+      s.includes('stable-diffusion') || s.includes(' sdxl') || s.includes('sd-')) return 'image';
+  if (s.includes('veo') || s.includes('kling') || s.includes('runway') || s.includes('luma') || s.includes('-video')) return 'video';
+  // Heuristic: chat-completion-capable models — anything that LiteLLM commonly proxies.
+  return 'text';
+}
+
 async function loadProviderModels(
   role: Role,
   provider: Provider,
   apiKey: string | undefined,
+  endpoint: string | undefined,
 ): Promise<ProviderModel[]> {
   const curated = modelsForProvider(CURATED_BY_ROLE[role], provider);
 
@@ -141,6 +177,20 @@ async function loadProviderModels(
     } catch {
       // Network/auth failure: silently fall back to curated.
     }
+  } else if (provider === 'litellm' && apiKey && endpoint) {
+    try {
+      const raw = await fetchLitellmModels(endpoint, apiKey);
+      dynamic = raw
+        .filter((m) => classifyLitellmModel(m.id) === role)
+        .map((m) => ({
+          id: m.id,
+          provider: 'litellm' as Provider,
+          name: m.id,
+          description: m.owned_by ? `via ${m.owned_by} (LiteLLM)` : 'via LiteLLM',
+        }));
+    } catch {
+      // Network/auth failure: silently fall back to the placeholder curated entry.
+    }
   }
 
   // Curated entries take precedence (better display names + descriptions),
@@ -148,6 +198,12 @@ async function loadProviderModels(
   const merged = new Map<string, ModelDef>();
   for (const m of dynamic)  merged.set(m.id, m);
   for (const m of curated)  merged.set(m.id, m);
+
+  // For LiteLLM, drop the "auto-detected" placeholder once real models load.
+  if (provider === 'litellm' && dynamic.length > 0) {
+    merged.delete('litellm-default');
+    merged.delete('litellm-image-default');
+  }
 
   const list = Array.from(merged.values());
   const flags = markAndFlagNew(list.map((m) => m.id));
@@ -160,6 +216,7 @@ export function useProviderModels(
   role: Role,
   provider: Provider,
   apiKey: string | undefined,
+  endpoint?: string,
 ): ProviderModel[] {
   const [models, setModels] = useState<ProviderModel[]>(() =>
     modelsForProvider(CURATED_BY_ROLE[role], provider).map((m) => ({ ...m, isNew: false })),
@@ -167,11 +224,11 @@ export function useProviderModels(
 
   useEffect(() => {
     let cancelled = false;
-    loadProviderModels(role, provider, apiKey).then((ms) => {
+    loadProviderModels(role, provider, apiKey, endpoint).then((ms) => {
       if (!cancelled) setModels(ms);
     });
     return () => { cancelled = true; };
-  }, [role, provider, apiKey]);
+  }, [role, provider, apiKey, endpoint]);
 
   return models;
 }

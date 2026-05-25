@@ -37,6 +37,7 @@ function placeholderFor(p: Provider): string {
     case 'fal':          return 'fal-…';
     case 'openai':       return 'sk-…';
     case 'azure-openai': return 'Azure API key';
+    case 'litellm':      return 'sk-… (LiteLLM virtual key)';
   }
 }
 
@@ -161,6 +162,7 @@ export function SetupWizard() {
           const r = keys[role] ?? DEFAULT_KEYS[role]!;
           const showCopy = role !== 'text' && Boolean(keys.text?.key);
           const isAzure = r.provider === 'azure-openai';
+          const isLitellm = r.provider === 'litellm';
           return (
             <Field key={role} label={label} hint={hint}>
               <div className="flex items-center gap-2">
@@ -205,6 +207,18 @@ export function SetupWizard() {
                     onChange={(v) => setRole(role, { apiVersion: v })}
                     placeholder="API version (default 2024-10-21)"
                   />
+                </div>
+              )}
+              {isLitellm && (
+                <div className="mt-2 space-y-1 rounded-md border border-brand-500/30 bg-brand-500/5 p-2">
+                  <TextInput
+                    value={r.endpoint ?? ''}
+                    onChange={(v) => setRole(role, { endpoint: v })}
+                    placeholder="https://litellm.your-domain.com  (proxy base URL)"
+                  />
+                  <p className="text-[10px] text-ink-400">
+                    LiteLLM-compatible proxy URL. Models auto-discovered from <code>/v1/models</code>.
+                  </p>
                 </div>
               )}
             </Field>

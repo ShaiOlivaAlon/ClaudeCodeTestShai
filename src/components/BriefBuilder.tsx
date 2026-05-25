@@ -33,9 +33,9 @@ export function BriefBuilder() {
   const textProv  = apiKeys.text?.provider  ?? 'google';
   const imageProv = apiKeys.image?.provider ?? 'google';
   const videoProv = apiKeys.video?.provider ?? 'google';
-  const textModels  = useProviderModels('text',  textProv,  apiKeys.text?.key);
-  const imageModels = useProviderModels('image', imageProv, apiKeys.image?.key);
-  const videoModels = useProviderModels('video', videoProv, apiKeys.video?.key);
+  const textModels  = useProviderModels('text',  textProv,  apiKeys.text?.key,  apiKeys.text?.endpoint);
+  const imageModels = useProviderModels('image', imageProv, apiKeys.image?.key, apiKeys.image?.endpoint);
+  const videoModels = useProviderModels('video', videoProv, apiKeys.video?.key, apiKeys.video?.endpoint);
 
   const imageModel = findModel(IMAGE_MODELS, brief.imageModel);
   const canUseRef = Boolean(imageModel?.supportsReference);

@@ -31,6 +31,7 @@ function placeholderFor(p: Provider): string {
     case 'fal':          return 'fal-…';
     case 'openai':       return 'sk-…';
     case 'azure-openai': return 'Azure API key';
+    case 'litellm':      return 'sk-… (LiteLLM virtual key)';
   }
 }
 
@@ -132,9 +133,9 @@ export function SettingsModal() {
   const imageProv = draft.apiKeys.image?.provider ?? 'google';
   const videoProv = draft.apiKeys.video?.provider ?? 'google';
 
-  const textModelOptions  = useProviderModels('text',  textProv,  draft.apiKeys.text?.key);
-  const imageModelOptions = useProviderModels('image', imageProv, draft.apiKeys.image?.key);
-  const videoModelOptions = useProviderModels('video', videoProv, draft.apiKeys.video?.key);
+  const textModelOptions  = useProviderModels('text',  textProv,  draft.apiKeys.text?.key,  draft.apiKeys.text?.endpoint);
+  const imageModelOptions = useProviderModels('image', imageProv, draft.apiKeys.image?.key, draft.apiKeys.image?.endpoint);
+  const videoModelOptions = useProviderModels('video', videoProv, draft.apiKeys.video?.key, draft.apiKeys.video?.endpoint);
 
   return (
     <Modal open={open} onClose={close} title="Settings" wide>
@@ -146,6 +147,7 @@ export function SettingsModal() {
             const r = draft.apiKeys[role] ?? { provider: 'google' as Provider, key: '' };
             const showCopy = role !== 'text' && Boolean(draft.apiKeys.text?.key);
             const isAzure = r.provider === 'azure-openai';
+            const isLitellm = r.provider === 'litellm';
             return (
               <Field key={role} label={label}>
                 <div className="flex items-center gap-2">
@@ -190,6 +192,18 @@ export function SettingsModal() {
                       onChange={(v) => setRole(role, { apiVersion: v })}
                       placeholder="API version (default 2024-10-21)"
                     />
+                  </div>
+                )}
+                {isLitellm && (
+                  <div className="mt-2 space-y-1 rounded-md border border-brand-500/30 bg-brand-500/5 p-2">
+                    <TextInput
+                      value={r.endpoint ?? ''}
+                      onChange={(v) => setRole(role, { endpoint: v })}
+                      placeholder="https://litellm.your-domain.com  (proxy base URL)"
+                    />
+                    <p className="text-[10px] text-ink-400">
+                      LiteLLM-compatible proxy URL. Models are auto-discovered from <code>/v1/models</code>.
+                    </p>
                   </div>
                 )}
               </Field>
