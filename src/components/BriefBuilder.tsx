@@ -67,6 +67,11 @@ export function BriefBuilder() {
       dispatch({ type: 'ui/openSettings', open: true });
       return;
     }
+    const missing = describeMissing();
+    if (missing) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: missing } });
+      return;
+    }
     dispatch({ type: 'ui/suggesting', value: true });
     try {
       const suggestions = await generateSuggestions({
@@ -186,11 +191,17 @@ export function BriefBuilder() {
     );
   }
 
-  const briefReady = useMemo(
-    () => brief.aspectRatios.length > 0
-      && (brief.themes.length + brief.styles.length + brief.features.length + brief.titles.length + brief.notes.length > 0),
-    [brief],
-  );
+  // What's "enough" to brainstorm: an aspect ratio + at least one signal of intent.
+  // Selected assets count as a signal — many briefs are just "render these characters in this ratio".
+  function describeMissing(): string | null {
+    const missing: string[] = [];
+    if (brief.aspectRatios.length === 0) missing.push('at least one aspect ratio');
+    const anySignal = brief.themes.length + brief.styles.length + brief.features.length
+      + brief.seasons.length + brief.titles.length + brief.notes.length + includedAssets.length;
+    if (anySignal === 0) missing.push('a theme, style, season, title, asset, or some notes');
+    return missing.length === 0 ? null : `Add ${missing.join(' and ')} before brainstorming.`;
+  }
+  const missingMessage = describeMissing();
 
   // Summaries shown in the collapsed accordion headers.
   const moodSummary = useMemo(() => {
@@ -419,13 +430,16 @@ export function BriefBuilder() {
 
         <Card className="border-brand-400/40 bg-brand-500/5">
           <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 font-display text-base font-semibold text-white">
                 <Sparkles size={18} className="text-brand-300" /> Brainstorm concept set
               </div>
               <div className="text-xs text-ink-300">Each idea picks one season + theme + style — clearly labelled on the result.</div>
+              {missingMessage && (
+                <div className="mt-1 text-[11px] text-amber-300">{missingMessage}</div>
+              )}
             </div>
-            <Button size="lg" onClick={onGenerateSuggestions} disabled={state.ui.suggesting || !briefReady} title={!briefReady ? 'Fill at least an aspect ratio plus a theme/style/title.' : ''}>
+            <Button size="lg" onClick={onGenerateSuggestions} disabled={state.ui.suggesting}>
               {state.ui.suggesting ? <Spinner size={16} /> : <Wand2 size={16} />}
               {state.ui.suggesting ? 'Brainstorming…' : 'Generate ideas'}
             </Button>
