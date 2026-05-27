@@ -52,14 +52,49 @@ async function urlToBase64(url: string): Promise<{ b64: string; mime: string }> 
   return { b64: btoa(bin), mime };
 }
 
-/** Strip ```json fences if a model wraps output. */
+/** Strip ```json fences if a model wraps output, then parse leniently.
+ *  When the model truncates mid-array (common with large `ideas` arrays), recover by
+ *  keeping every complete `{ ... }` object that landed before the cut. */
 function extractJson(text: string): any {
   const fence = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
   const body = fence ? fence[1] : text;
   const start = body.indexOf('{');
   const end = body.lastIndexOf('}');
   const slice = start >= 0 && end > start ? body.slice(start, end + 1) : body;
-  return JSON.parse(slice);
+
+  try { return JSON.parse(slice); } catch { /* fall through to repair */ }
+  // Drop stray trailing commas (some models emit `{ ... }, ]` style).
+  try { return JSON.parse(slice.replace(/,(\s*[}\]])/g, '$1')); } catch { /* keep trying */ }
+
+  // Truncated `"ideas": [ ... cut ... ]` — keep only the complete top-level objects.
+  const m = /"ideas"\s*:\s*\[([\s\S]*)$/.exec(slice);
+  if (m) {
+    const arrBody = m[1];
+    const completeEnds: number[] = [];
+    let depth = 0, inStr = false, esc = false;
+    for (let i = 0; i < arrBody.length; i++) {
+      const c = arrBody[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') { inStr = true; continue; }
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) completeEnds.push(i); }
+    }
+    if (completeEnds.length > 0) {
+      const lastClose = completeEnds[completeEnds.length - 1];
+      try {
+        return JSON.parse(`{"ideas":[${arrBody.slice(0, lastClose + 1)}]}`);
+      } catch { /* fall through */ }
+    }
+  }
+
+  throw new Error(
+    'The model returned malformed JSON we could not recover. Try again, lower the number of ideas, or switch to a stronger model.',
+  );
 }
 
 /** Closest size OpenAI image models accept. */
@@ -140,6 +175,7 @@ async function openaiMessage(opts: {
   system: string;
   user: string;
   maxTokens?: number;
+  jsonMode?: boolean;
 }): Promise<string> {
   const isReasoning = /^o\d/.test(opts.model);
   const body: Record<string, unknown> = {
@@ -152,6 +188,8 @@ async function openaiMessage(opts: {
   };
   // Reasoning models use max_completion_tokens; chat models accept either.
   body[isReasoning ? 'max_completion_tokens' : 'max_tokens'] = opts.maxTokens ?? 4096;
+  // response_format is supported on chat models; reasoning models don't accept it.
+  if (opts.jsonMode && !isReasoning) body.response_format = { type: 'json_object' };
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -207,18 +245,21 @@ async function litellmMessage(opts: {
   system: string;
   user: string;
   maxTokens?: number;
+  jsonMode?: boolean;
 }): Promise<string> {
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    messages: [
+      { role: 'system', content: opts.system },
+      { role: 'user', content: opts.user },
+    ],
+    max_tokens: opts.maxTokens ?? 4096,
+  };
+  if (opts.jsonMode) body.response_format = { type: 'json_object' };
   const res = await fetch(`${opts.endpoint}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${opts.apiKey}` },
-    body: JSON.stringify({
-      model: opts.model,
-      messages: [
-        { role: 'system', content: opts.system },
-        { role: 'user', content: opts.user },
-      ],
-      max_tokens: opts.maxTokens ?? 4096,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -263,18 +304,21 @@ async function azureOpenAIMessage(opts: {
   system: string;
   user: string;
   maxTokens?: number;
+  jsonMode?: boolean;
 }): Promise<string> {
   const url = `${opts.endpoint}/openai/deployments/${encodeURIComponent(opts.deployment)}/chat/completions?api-version=${encodeURIComponent(opts.apiVersion)}`;
+  const body: Record<string, unknown> = {
+    messages: [
+      { role: 'system', content: opts.system },
+      { role: 'user', content: opts.user },
+    ],
+    max_tokens: opts.maxTokens ?? 4096,
+  };
+  if (opts.jsonMode) body.response_format = { type: 'json_object' };
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'api-key': opts.apiKey },
-    body: JSON.stringify({
-      messages: [
-        { role: 'system', content: opts.system },
-        { role: 'user', content: opts.user },
-      ],
-      max_tokens: opts.maxTokens ?? 4096,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -321,15 +365,21 @@ async function geminiMessage(opts: {
   system: string;
   user: string;
   maxTokens?: number;
+  jsonMode?: boolean;
 }): Promise<string> {
   const url = `${GOOGLE_BASE}/models/${opts.model}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: opts.maxTokens ?? 4096,
+    temperature: 0.9,
+  };
+  if (opts.jsonMode) generationConfig.responseMimeType = 'application/json';
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: opts.system }] },
       contents: [{ role: 'user', parts: [{ text: opts.user }] }],
-      generationConfig: { maxOutputTokens: opts.maxTokens ?? 4096, temperature: 0.9 },
+      generationConfig,
     }),
   });
   if (!res.ok) {
@@ -615,21 +665,24 @@ async function falGenerateVideo(opts: {
 
 // ----- Provider-dispatched public API --------------------------------------
 
-async function dispatchText(role: RoleKey, model: string, system: string, user: string, maxTokens: number): Promise<string> {
+async function dispatchText(
+  role: RoleKey, model: string, system: string, user: string, maxTokens: number, jsonMode = false,
+): Promise<string> {
   switch (role.provider) {
     case 'google':
-      return geminiMessage({ apiKey: role.key, model, system, user, maxTokens });
+      return geminiMessage({ apiKey: role.key, model, system, user, maxTokens, jsonMode });
     case 'anthropic':
+      // Anthropic relies on the system prompt's JSON instruction; no native response_format flag.
       return anthropicMessage({ apiKey: role.key, model, system, user, maxTokens });
     case 'openai':
-      return openaiMessage({ apiKey: role.key, model, system, user, maxTokens });
+      return openaiMessage({ apiKey: role.key, model, system, user, maxTokens, jsonMode });
     case 'azure-openai': {
       const az = requireAzureFields(role);
-      return azureOpenAIMessage({ apiKey: role.key, ...az, system, user, maxTokens });
+      return azureOpenAIMessage({ apiKey: role.key, ...az, system, user, maxTokens, jsonMode });
     }
     case 'litellm': {
       const lf = requireLitellmFields(role);
-      return litellmMessage({ apiKey: role.key, ...lf, model, system, user, maxTokens });
+      return litellmMessage({ apiKey: role.key, ...lf, model, system, user, maxTokens, jsonMode });
     }
     default:
       throw new Error(`Provider ${role.provider} cannot generate text.`);
@@ -649,7 +702,9 @@ export async function generateSuggestions(opts: {
 
   const system = buildSuggestionSystemPrompt();
   const user = buildSuggestionUserPrompt(opts.brief);
-  const raw = await dispatchText(role, opts.textModel, system, user, 6000);
+  // Ideation can produce 24 ideas × ~600 chars JSON each ≈ 14k chars. Budget generously and ask
+  // providers to emit native JSON where possible; extractJson recovers the truncation case anyway.
+  const raw = await dispatchText(role, opts.textModel, system, user, 16000, true);
 
   const parsed = extractJson(raw) as {
     ideas: {
