@@ -1,7 +1,7 @@
-import type { ApiKeys, Asset, BriefPreset, GameProject, Generation, ReskinProject, Settings } from '../types';
+import type { ApiKeys, Asset, BriefPreset, GameProject, Generation, Project, ReskinProject, Settings } from '../types';
 
 const DB_NAME = 'playtika-artist-studio';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const STORE_ASSETS = 'assets';
 const STORE_GENERATIONS = 'generations';
 const STORE_PRESETS = 'briefPresets';
@@ -9,6 +9,7 @@ const STORE_IMAGE_CACHE = 'imageCache';
 const STORE_VIDEO_CACHE = 'videoCache';
 const STORE_GAME_PROJECTS = 'gameProjects';
 const STORE_RESKIN_PROJECTS = 'reskinProjects';
+const STORE_PROJECTS = 'projects';
 const SETTINGS_KEY = 'pas.settings.v1';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -39,6 +40,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_RESKIN_PROJECTS)) {
         db.createObjectStore(STORE_RESKIN_PROJECTS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_PROJECTS)) {
+        db.createObjectStore(STORE_PROJECTS, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -320,6 +324,38 @@ export async function putReskinProject(p: ReskinProject): Promise<void> {
 
 export async function deleteReskinProject(id: string): Promise<void> {
   await tx<void>(STORE_RESKIN_PROJECTS, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+// --- Projects (org-level folders) -----------------------------------------
+
+export async function listProjects(): Promise<Project[]> {
+  return tx<Project[]>(STORE_PROJECTS, 'readonly', (s) => {
+    return new Promise<Project[]>((resolve, reject) => {
+      const req = s.getAll();
+      req.onsuccess = () => resolve((req.result as Project[]).sort((a, b) => b.updatedAt - a.updatedAt));
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function putProject(p: Project): Promise<void> {
+  await tx<void>(STORE_PROJECTS, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.put(p);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  await tx<void>(STORE_PROJECTS, 'readwrite', (s) => {
     return new Promise<void>((resolve, reject) => {
       const req = s.delete(id);
       req.onsuccess = () => resolve();

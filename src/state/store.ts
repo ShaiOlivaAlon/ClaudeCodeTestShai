@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { Asset, Brief, BriefPreset, GameProject, Generation, ReskinProject, Settings, Suggestion } from '../types';
+import type { Asset, Brief, BriefPreset, GameProject, Generation, Project, ReskinProject, Settings, Suggestion } from '../types';
 
 export interface ToastItem {
   id: string;
@@ -20,6 +20,10 @@ export interface AppState {
   activeGameProjectId: string | null;
   reskinProjects: ReskinProject[];
   activeReskinProjectId: string | null;
+  /** Org-level project folders (groups Briefs + Generations). */
+  projects: Project[];
+  /** null = "All projects" view (no filter, new generations are unfiled). */
+  activeProjectId: string | null;
   /** UI: which modals are open. */
   ui: {
     setupOpen: boolean;
@@ -55,6 +59,10 @@ export type AppAction =
   | { type: 'reskinProjects/upsert'; project: ReskinProject }
   | { type: 'reskinProjects/remove'; id: string }
   | { type: 'reskinProjects/setActive'; id: string | null }
+  | { type: 'projects/set'; projects: Project[] }
+  | { type: 'projects/upsert'; project: Project }
+  | { type: 'projects/remove'; id: string }
+  | { type: 'projects/setActive'; id: string | null }
   | { type: 'brief/patch'; patch: Partial<Brief> }
   | { type: 'brief/toggleAsset'; assetId: string }
   | { type: 'brief/toggleAspect'; ratio: Brief['aspectRatios'][number] }
@@ -218,6 +226,23 @@ export function reducer(state: AppState, action: AppAction): AppState {
       };
     case 'reskinProjects/setActive':
       return { ...state, activeReskinProjectId: action.id };
+    case 'projects/set':
+      return { ...state, projects: action.projects };
+    case 'projects/upsert': {
+      const idx = state.projects.findIndex((p) => p.id === action.project.id);
+      const list = idx >= 0
+        ? state.projects.map((p) => (p.id === action.project.id ? action.project : p))
+        : [action.project, ...state.projects];
+      return { ...state, projects: list };
+    }
+    case 'projects/remove':
+      return {
+        ...state,
+        projects: state.projects.filter((p) => p.id !== action.id),
+        activeProjectId: state.activeProjectId === action.id ? null : state.activeProjectId,
+      };
+    case 'projects/setActive':
+      return { ...state, activeProjectId: action.id };
     case 'ui/openSetup':
       return { ...state, ui: { ...state.ui, setupOpen: action.open } };
     case 'ui/openSettings':
@@ -262,6 +287,8 @@ export const initialState: AppState = {
   activeGameProjectId: null,
   reskinProjects: [],
   activeReskinProjectId: null,
+  projects: [],
+  activeProjectId: null,
   ui: {
     setupOpen: false,
     settingsOpen: false,

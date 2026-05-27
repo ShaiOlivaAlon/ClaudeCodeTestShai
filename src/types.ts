@@ -82,6 +82,19 @@ export interface Generation {
   parentId?: string;
   /** Set on inpaint results — short description of the edit ("hat -> wizard hat"). */
   editNote?: string;
+  /** Project the generation belongs to (null = not filed under a project). */
+  projectId?: string;
+}
+
+/** A named project used to group Briefs + Generations (org-level container).
+ *  Distinct from GameProject (game-feature container) and ReskinProject. */
+export interface Project {
+  id: string;
+  name: string;
+  /** Hex colour for the project chip. */
+  color: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** A reusable brief configuration (no assets — those live in the library). */

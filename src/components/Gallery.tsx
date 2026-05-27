@@ -10,24 +10,44 @@ import { cls, copyToClipboard, downloadUrl, shortText } from '../lib/utils';
 
 export function Gallery() {
   const { state, dispatch } = useStore();
-  const generations = state.generations;
+  const activeProject = state.projects.find((p) => p.id === state.activeProjectId) ?? null;
+  // Filter by the active project. null = "All projects" = no filter.
+  const generations = activeProject
+    ? state.generations.filter((g) => g.projectId === activeProject.id)
+    : state.generations;
+
+  async function clearVisible() {
+    const label = activeProject ? `from "${activeProject.name}"` : 'from the gallery';
+    if (!confirm(`Remove all ${generations.length} render${generations.length === 1 ? '' : 's'} ${label}?`)) return;
+    for (const g of generations) await deleteGeneration(g.id);
+    if (activeProject) {
+      // Only drop the filtered subset from state.
+      dispatch({ type: 'generations/set', generations: state.generations.filter((g) => g.projectId !== activeProject.id) });
+    } else {
+      dispatch({ type: 'generations/clear' });
+    }
+  }
 
   return (
     <aside className="flex h-full flex-col overflow-hidden bg-ink-900 lg:border-l lg:border-ink-800">
       <div className="flex items-center justify-between border-b border-ink-800 px-4 py-3">
-        <div>
+        <div className="min-w-0">
           <div className="font-display text-sm font-semibold uppercase tracking-wider text-ink-100">Gallery</div>
-          <div className="text-xs text-ink-400">{generations.length} renders</div>
+          <div className="flex items-center gap-1.5 truncate text-xs text-ink-400">
+            <span>{generations.length} render{generations.length === 1 ? '' : 's'}</span>
+            {activeProject && (
+              <>
+                <span className="text-ink-600">·</span>
+                <span className="inline-flex items-center gap-1 truncate text-ink-300">
+                  <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: activeProject.color }} />
+                  {activeProject.name}
+                </span>
+              </>
+            )}
+          </div>
         </div>
         {generations.length > 0 && (
-          <button
-            onClick={async () => {
-              if (!confirm('Remove all generations from gallery?')) return;
-              for (const g of generations) await deleteGeneration(g.id);
-              dispatch({ type: 'generations/clear' });
-            }}
-            className="text-xs text-ink-400 hover:text-white"
-          >
+          <button onClick={clearVisible} className="text-xs text-ink-400 hover:text-white">
             clear
           </button>
         )}
@@ -35,7 +55,11 @@ export function Gallery() {
 
       <div className="flex-1 overflow-y-auto p-3">
         {generations.length === 0 ? (
-          <EmptyState icon={<ImageIcon size={24} />} title="Nothing rendered yet" hint="Build a brief, generate ideas, tick the ones you love, then hit Generate images." />
+          <EmptyState
+            icon={<ImageIcon size={24} />}
+            title={activeProject ? 'No renders in this project yet' : 'Nothing rendered yet'}
+            hint={activeProject ? 'Switch to "All projects" in the header to see renders from other projects.' : 'Build a brief, generate ideas, tick the ones you love, then hit Generate images.'}
+          />
         ) : (
           <div className="grid grid-cols-2 gap-3">
             {generations.map((g) => <GalleryCard key={g.id} g={g} />)}

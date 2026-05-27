@@ -2,7 +2,7 @@ import { useEffect, useReducer, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Crown, LayoutGrid, Wand2 } from 'lucide-react';
 import { initialState, reducer, StoreContext } from './state/store';
-import { listAssets, listBriefPresets, listGameProjects, listGenerations, listReskinProjects, loadSettings } from './lib/storage';
+import { listAssets, listBriefPresets, listGameProjects, listGenerations, listProjects, listReskinProjects, loadSettings } from './lib/storage';
 import { Header } from './components/Header';
 import { AssetLibrary } from './components/AssetLibrary';
 import { MainPanel } from './components/MainPanel';
@@ -30,18 +30,27 @@ export function App() {
     (async () => {
       const settings = loadSettings();
       dispatch({ type: 'settings/set', settings });
-      const [assets, generations, presets, gameProjects, reskinProjects] = await Promise.all([
+      const [assets, generations, presets, gameProjects, reskinProjects, projects] = await Promise.all([
         listAssets(),
         listGenerations(),
         listBriefPresets(),
         listGameProjects(),
         listReskinProjects(),
+        listProjects(),
       ]);
       dispatch({ type: 'assets/set', assets });
       dispatch({ type: 'generations/set', generations });
       dispatch({ type: 'briefPresets/set', presets });
       dispatch({ type: 'gameProjects/set', projects: gameProjects });
       dispatch({ type: 'reskinProjects/set', projects: reskinProjects });
+      dispatch({ type: 'projects/set', projects });
+      // Restore the last-selected project so the user lands back where they left off.
+      try {
+        const savedId = localStorage.getItem('pas.activeProjectId');
+        if (savedId && projects.some((p) => p.id === savedId)) {
+          dispatch({ type: 'projects/setActive', id: savedId });
+        }
+      } catch { /* ignore */ }
 
       dispatch({
         type: 'brief/patch',

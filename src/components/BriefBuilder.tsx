@@ -133,6 +133,7 @@ export function BriefBuilder() {
             status: 'generating' as const,
             createdAt: Date.now(),
             referenceAssetIds: includedAssets.map((a) => a.id),
+            projectId: state.activeProjectId ?? undefined,
             chosenSeason: sug.chosenSeason,
             chosenTheme:  sug.chosenTheme,
             chosenStyle:  sug.chosenStyle,
