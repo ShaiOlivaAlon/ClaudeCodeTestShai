@@ -1,11 +1,11 @@
-import { Download, Film, Copy, RefreshCw, ChevronLeft, ChevronRight, X, Pencil } from 'lucide-react';
+import { Download, Film, Copy, Copy as CopyIcon, RefreshCw, ChevronLeft, ChevronRight, X, Pencil, Sparkles } from 'lucide-react';
 import { useStore } from '../state/store';
 import { Button, Spinner } from './ui';
-import { generateImage, generateVideo, makeAnimatePrompt } from '../lib/api';
+import { generateImage, generateSocialCopy, generateVideo, makeAnimatePrompt } from '../lib/api';
 import { putGeneration } from '../lib/storage';
 import { copyToClipboard, downloadUrl, cls } from '../lib/utils';
 import { useEffect, useMemo, useState } from 'react';
-import type { Generation } from '../types';
+import type { Generation, SocialCopy, SocialPlatform } from '../types';
 
 export function DetailModal() {
   const { state, dispatch } = useStore();
@@ -228,6 +228,9 @@ function DetailModalBody({
                 <p className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-rose-500/50 bg-rose-950/40 p-2 text-[11px] text-rose-100">{g.video.error ?? 'unknown error'}</p>
               </div>
             )}
+
+            <SocialCopySection g={g} />
+
             <div>
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">Prompt</div>
               <p className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-700 bg-ink-900 p-2 text-xs text-ink-100">{g.prompt}</p>
@@ -277,6 +280,120 @@ function Meta({ label, value }: { label: string; value: string }) {
     <div className="text-xs">
       <span className="mr-2 inline-block w-28 text-ink-400">{label}</span>
       <span className="text-ink-100">{value}</span>
+    </div>
+  );
+}
+
+const PLATFORMS: { id: SocialPlatform; label: string; accent: string }[] = [
+  { id: 'tiktok',    label: 'TikTok',    accent: 'border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-100' },
+  { id: 'instagram', label: 'Instagram', accent: 'border-rose-400/40    bg-rose-500/10    text-rose-100' },
+  { id: 'facebook',  label: 'Facebook',  accent: 'border-blue-400/40    bg-blue-500/10    text-blue-100' },
+  { id: 'x',         label: 'X',         accent: 'border-ink-500        bg-ink-700/30     text-ink-100' },
+];
+
+function socialHashOf(g: Generation): string {
+  return `${g.id}::${g.prompt.slice(0, 200)}::${g.title}`;
+}
+
+function SocialCopySection({ g }: { g: Generation }) {
+  const { state, dispatch } = useStore();
+  const [busy, setBusy] = useState(false);
+  const [platform, setPlatform] = useState<SocialPlatform>('instagram');
+
+  const expectedHash = socialHashOf(g);
+  const current = g.socialCopy && g.socialCopy.hash === expectedHash ? g.socialCopy : null;
+
+  async function generate() {
+    if (!state.settings.apiKeys.text?.key) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: 'Add your LLM (Text) API key in Settings first.' } });
+      dispatch({ type: 'ui/openSettings', open: true });
+      return;
+    }
+    setBusy(true);
+    try {
+      const byPlatform = await generateSocialCopy({
+        apiKeys: state.settings.apiKeys,
+        textModel: state.brief.textModel,
+        title: g.title,
+        prompt: g.prompt,
+      });
+      const next: Generation = { ...g, socialCopy: { hash: expectedHash, generatedAt: Date.now(), byPlatform } as SocialCopy };
+      dispatch({ type: 'generations/upsert', generation: next });
+      putGeneration(next);
+      dispatch({ type: 'ui/toast', toast: { kind: 'success', message: 'Social copy ready.' } });
+    } catch (err: any) {
+      dispatch({ type: 'ui/toast', toast: { kind: 'error', message: err?.message ?? 'Copy generation failed.' } });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const data = current?.byPlatform?.[platform];
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Social copy</div>
+        <Button size="sm" variant="ghost" onClick={generate} disabled={busy}>
+          {busy ? <Spinner size={12} /> : <Sparkles size={12} />}
+          {current ? 'Regenerate' : 'Generate captions'}
+        </Button>
+      </div>
+      {current ? (
+        <div className="rounded-md border border-ink-700 bg-ink-900 p-2">
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {PLATFORMS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setPlatform(p.id)}
+                className={cls(
+                  'rounded-full border px-2 py-0.5 text-[10px] transition active:scale-95',
+                  platform === p.id ? p.accent : 'border-ink-700 text-ink-400 hover:text-white',
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {data ? (
+            <div className="space-y-2">
+              <div>
+                <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-500">Captions</div>
+                <ul className="space-y-1">
+                  {data.captions.map((c, i) => (
+                    <li key={i} className="group flex items-start gap-1.5 rounded border border-ink-700 bg-ink-850 px-2 py-1">
+                      <span className="min-w-0 flex-1 whitespace-pre-wrap text-[11px] text-ink-100">{c}</span>
+                      <button onClick={() => { copyToClipboard(c); dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Copied caption.' } }); }} className="shrink-0 opacity-0 transition group-hover:opacity-100" title="Copy">
+                        <CopyIcon size={11} className="text-ink-400 hover:text-white" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-500">Hashtags</div>
+                <div className="flex flex-wrap items-center gap-1">
+                  {data.hashtags.map((h) => (
+                    <span key={h} className="rounded-full bg-ink-700/50 px-1.5 py-0.5 text-[10px] text-ink-200">{h}</span>
+                  ))}
+                  <button
+                    onClick={() => { copyToClipboard(data.hashtags.join(' ')); dispatch({ type: 'ui/toast', toast: { kind: 'info', message: 'Copied hashtags.' } }); }}
+                    className="rounded-full border border-ink-700 px-1.5 py-0.5 text-[10px] text-ink-400 hover:text-white"
+                  >
+                    <CopyIcon size={10} /> copy all
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px] text-ink-400">No copy for this platform yet.</p>
+          )}
+        </div>
+      ) : (
+        <p className="rounded-md border border-dashed border-ink-700 px-2 py-1.5 text-[11px] text-ink-400">
+          No captions yet — generate platform-tuned captions + hashtags for TikTok, Instagram, Facebook, and X.
+        </p>
+      )}
     </div>
   );
 }

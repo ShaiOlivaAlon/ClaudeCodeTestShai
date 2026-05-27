@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Check, KeyRound, Trash2, Copy } from 'lucide-react';
-import type { ApiKeys, Provider, Role } from '../types';
+import type { ApiKeys, BrandGuard, Provider, Role } from '../types';
 import { useStore } from '../state/store';
 import { saveSettings } from '../lib/storage';
 import { Button, Field, Modal, Select, Spinner, TextInput } from './ui';
@@ -235,6 +235,13 @@ export function SettingsModal() {
           </Field>
 
           <div className="border-t border-ink-700 pt-4">
+            <BrandGuardEditor
+              value={draft.brandGuard}
+              onChange={(g) => setDraft({ ...draft, brandGuard: g })}
+            />
+          </div>
+
+          <div className="border-t border-ink-700 pt-4">
             <Button variant="danger" size="sm" onClick={purgeHistory}>
               <Trash2 size={14} /> Clear generation history
             </Button>
@@ -262,5 +269,107 @@ function KeyResult({ ok }: { ok?: boolean }) {
     <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-1 text-xs text-rose-200">
       ✕ Fail
     </span>
+  );
+}
+
+function BrandGuardEditor({ value, onChange }: { value: BrandGuard; onChange: (g: BrandGuard) => void }) {
+  const [colorDraft, setColorDraft] = useState('#');
+  const [requiredDraft, setRequiredDraft] = useState('');
+  const [bannedDraft, setBannedDraft] = useState('');
+
+  function addColor() {
+    const c = colorDraft.trim();
+    if (!/^#?[0-9a-fA-F]{3,8}$/.test(c)) return;
+    const norm = c.startsWith('#') ? c : `#${c}`;
+    if (!value.colors.includes(norm)) onChange({ ...value, colors: [...value.colors, norm] });
+    setColorDraft('#');
+  }
+  function addRequired() {
+    const t = requiredDraft.trim();
+    if (!t) return;
+    onChange({ ...value, required: [...value.required, t] });
+    setRequiredDraft('');
+  }
+  function addBanned() {
+    const t = bannedDraft.trim();
+    if (!t) return;
+    onChange({ ...value, banned: [...value.banned, t] });
+    setBannedDraft('');
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-ink-100">Brand guard</h3>
+        <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-200">
+          <input
+            type="checkbox"
+            checked={value.enabled}
+            onChange={(e) => onChange({ ...value, enabled: e.target.checked })}
+            className="h-3.5 w-3.5 accent-brand-500"
+          />
+          Enabled
+        </label>
+      </div>
+      <p className="mb-2 text-[11px] text-ink-400">Auto-injected into every ideation prompt when enabled. Stored in your browser only.</p>
+
+      <Field label="Brand palette (hex)">
+        <div className="flex items-center gap-2">
+          <TextInput value={colorDraft} onChange={setColorDraft} placeholder="#a875ff" />
+          <Button size="sm" variant="secondary" onClick={addColor}>Add</Button>
+        </div>
+        {value.colors.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {value.colors.map((c) => (
+              <span key={c} className="inline-flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800 pl-1.5 text-[11px] text-ink-200">
+                <span className="h-3 w-3 rounded-full border border-black/40" style={{ background: c }} />
+                <span>{c}</span>
+                <button onClick={() => onChange({ ...value, colors: value.colors.filter((x) => x !== c) })} className="px-1.5 py-1 text-ink-400 hover:text-rose-300">×</button>
+              </span>
+            ))}
+          </div>
+        )}
+      </Field>
+
+      <div className="mt-3">
+        <Field label="Required tokens (always appear)">
+          <div className="flex items-center gap-2">
+            <TextInput value={requiredDraft} onChange={setRequiredDraft} placeholder='e.g. "Playtika logo bottom-right"'
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRequired(); } }} />
+            <Button size="sm" variant="secondary" onClick={addRequired}>Add</Button>
+          </div>
+          {value.required.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {value.required.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-100">
+                  {t}
+                  <button onClick={() => onChange({ ...value, required: value.required.filter((x) => x !== t) })} className="px-1 text-emerald-300 hover:text-rose-300">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+        </Field>
+      </div>
+
+      <div className="mt-3">
+        <Field label="Forbidden tokens (never appear)">
+          <div className="flex items-center gap-2">
+            <TextInput value={bannedDraft} onChange={setBannedDraft} placeholder='e.g. "real money, gambling chips"'
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBanned(); } }} />
+            <Button size="sm" variant="secondary" onClick={addBanned}>Add</Button>
+          </div>
+          {value.banned.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {value.banned.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 rounded-full border border-rose-400/40 bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-100">
+                  {t}
+                  <button onClick={() => onChange({ ...value, banned: value.banned.filter((x) => x !== t) })} className="px-1 text-rose-300 hover:text-rose-100">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+        </Field>
+      </div>
+    </div>
   );
 }

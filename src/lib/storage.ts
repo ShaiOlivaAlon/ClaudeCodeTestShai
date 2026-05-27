@@ -75,6 +75,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultImageModel: 'gemini-3-pro-image-preview',
   defaultVideoModel: 'veo-3.1-generate-preview',
   setupComplete: false,
+  brandGuard: { enabled: false, colors: [], required: [], banned: [] },
 };
 
 /** Migrate the pre-role flat key shape ({ anthropic, fal, openai }) to role-based. */
@@ -123,6 +124,7 @@ export function loadSettings(): Settings {
       ...DEFAULT_SETTINGS,
       ...parsed,
       apiKeys: migrateApiKeys(parsed.apiKeys),
+      brandGuard: { ...DEFAULT_SETTINGS.brandGuard, ...(parsed.brandGuard ?? {}) },
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

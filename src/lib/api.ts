@@ -1,5 +1,6 @@
 import type { ApiKeys, Asset, AspectRatio, Provider, Role, RoleKey, Suggestion } from '../types';
-import { buildAnimatePromptHint, buildImagePromptEnhancer, buildSuggestionSystemPrompt, buildSuggestionUserPrompt, type BriefForLLM } from './prompts';
+import { buildAnimatePromptHint, buildImagePromptEnhancer, buildSocialCopySystemPrompt, buildSocialCopyUserPrompt, buildSuggestionSystemPrompt, buildSuggestionUserPrompt, type BriefForLLM } from './prompts';
+import type { SocialCopy } from '../types';
 import { dataUrlToBlob, falImageSize, klingAspect } from './utils';
 import { findModel, IMAGE_MODELS, TEXT_MODELS, VIDEO_MODELS } from './models';
 import { imageCacheKey, videoCacheKey } from './cacheKey';
@@ -674,12 +675,15 @@ async function falGenerateImage(opts: {
   strength?: number;
   /** LoRAs for flux-lora/* endpoints. */
   loras?: FalLoraSpec[];
+  /** Optional negative prompt — forwarded to FLUX-family endpoints when supported. */
+  negativePrompt?: string;
   onProgress?: (status: string) => void;
 }): Promise<{ url: string }> {
-  const { model, apiKey, prompt, aspectRatio, referenceUrls = [], width, height, strength, loras, onProgress } = opts;
+  const { model, apiKey, prompt, aspectRatio, referenceUrls = [], width, height, strength, loras, negativePrompt, onProgress } = opts;
   const imgSize = (width && height) ? { width, height } : falImageSize(aspectRatio);
 
   const input: Record<string, unknown> = { prompt };
+  if (negativePrompt?.trim()) input.negative_prompt = negativePrompt.trim();
 
   if (model.includes('flux-lora/image-to-image') && referenceUrls[0]) {
     input.image_url = referenceUrls[0];
@@ -832,6 +836,21 @@ export async function enhancePrompt(opts: {
   return out.trim();
 }
 
+export async function generateSocialCopy(opts: {
+  apiKeys: ApiKeys;
+  textModel: string;
+  title: string;
+  prompt: string;
+  description?: string;
+}): Promise<SocialCopy['byPlatform']> {
+  const role = getRole(opts.apiKeys, 'text');
+  const system = buildSocialCopySystemPrompt();
+  const user = buildSocialCopyUserPrompt({ title: opts.title, prompt: opts.prompt, description: opts.description });
+  const raw = await dispatchText(role, opts.textModel, system, user, 3000, true);
+  const parsed = extractJson(raw) as { byPlatform: SocialCopy['byPlatform'] };
+  return parsed.byPlatform ?? {};
+}
+
 export interface ImageGenInput {
   apiKeys: ApiKeys;
   model: string;
@@ -841,6 +860,10 @@ export interface ImageGenInput {
   referenceDataUrls?: string[];
   /** Used only to build the content-cache key (reference asset ids + their data urls live here). */
   cacheRefs?: { referenceAssetIds: string[]; assets: Asset[] };
+  /** Things the model should avoid (extra hands, low quality, etc). Forwarded where supported. */
+  negativePrompt?: string;
+  /** Img-to-img strength (lower = closer to source). Only honoured by img-to-img endpoints. */
+  strength?: number;
   onProgress?: (status: string) => void;
   /** Set to true to bypass the cache (e.g. when the user has explicitly asked for a fresh render). */
   bypassCache?: boolean;
@@ -914,6 +937,8 @@ async function dispatchImageGen(opts: ImageGenInput, role: RoleKey): Promise<{ u
     prompt: opts.prompt,
     aspectRatio: opts.aspectRatio,
     referenceUrls,
+    strength: opts.strength,
+    negativePrompt: opts.negativePrompt,
     onProgress: opts.onProgress,
   });
 }

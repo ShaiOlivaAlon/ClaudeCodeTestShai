@@ -13,6 +13,14 @@ import { generateSuggestions, generateImage, makeAnimatePrompt, generateVideo } 
 import { putBriefPreset, deleteBriefPreset, putGeneration } from '../lib/storage';
 import { cls, uid } from '../lib/utils';
 
+// Campaign-pack presets: one click ticks the right aspect-ratio bundle for each use case.
+const CAMPAIGN_PACKS: { id: string; label: string; ratios: AspectRatio[] }[] = [
+  { id: 'social',     label: 'Social campaign', ratios: ['1:1', '9:16', '4:5'] },
+  { id: 'appstore',   label: 'App store',       ratios: ['16:9', '1:1', '2:3'] },
+  { id: 'ad',         label: 'Ad creative',     ratios: ['1:1', '16:9', '9:16', '4:5'] },
+  { id: 'mobile',     label: 'Mobile-only',     ratios: ['9:16', '4:5', '3:4'] },
+];
+
 export function BriefBuilder() {
   const { state, dispatch } = useStore();
   const brief = state.brief;
@@ -83,6 +91,7 @@ export function BriefBuilder() {
           items:      state.assets.filter((a) => brief.selectedAssetIds.includes(a.id) && a.category === 'item'),
           logos:      state.assets.filter((a) => brief.selectedAssetIds.includes(a.id) && a.category === 'logo'),
           references: state.assets.filter((a) => brief.selectedAssetIds.includes(a.id) && a.category === 'reference'),
+          brandGuard: state.settings.brandGuard,
         },
       });
       dispatch({ type: 'suggestions/set', suggestions });
@@ -147,6 +156,8 @@ export function BriefBuilder() {
               aspectRatio: ratio,
               referenceDataUrls,
               cacheRefs: { referenceAssetIds: includedAssets.map((a) => a.id), assets: state.assets },
+              negativePrompt: brief.negativePrompt,
+              strength: imageModel?.supportsReference ? brief.referenceStrength : undefined,
             });
             if (cached) {
               dispatch({ type: 'ui/toast', toast: { kind: 'info', message: `Reused cached render for "${sug.title}" (${ratio}) — no API spend.` } });
@@ -254,6 +265,16 @@ export function BriefBuilder() {
             rows={3}
             placeholder='e.g. "A series of magical Shavuot ad creatives for a Match-3 game — Shai, Alon, and baby Oliva in a sun-drenched meadow surrounded by glowing wheat and golden coins. Cozy 3D cartoon, warm light, sparkles. Title: KALUA ASHDOD."'
           />
+          <div className="mt-3">
+            <Field label="Avoid / negative prompt (optional)">
+              <Textarea
+                value={brief.negativePrompt}
+                onChange={(v) => patch({ negativePrompt: v })}
+                rows={2}
+                placeholder='e.g. "extra hands, distorted faces, low-res text, gambling chips, real currency, watermarks"'
+              />
+            </Field>
+          </div>
         </Card>
 
         <Card>
@@ -294,6 +315,20 @@ export function BriefBuilder() {
 
         <Card>
           <SectionHeader title="Aspect ratios" subtitle="Each ticked ratio multiplies your output set." />
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {CAMPAIGN_PACKS.map((pk) => (
+              <button
+                key={pk.id}
+                onClick={() => patch({ aspectRatios: pk.ratios })}
+                className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-850 px-2.5 py-1 text-[11px] text-ink-200 transition hover:border-brand-400 hover:text-white active:scale-95"
+                title={`${pk.label} → ${pk.ratios.join(', ')}`}
+              >
+                <Sparkles size={11} className="text-brand-300" />
+                {pk.label}
+                <span className="text-[10px] text-ink-400">{pk.ratios.join(' · ')}</span>
+              </button>
+            ))}
+          </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {ASPECT_RATIOS.map((r) => {
               const active = brief.aspectRatios.includes(r.id);
@@ -434,6 +469,18 @@ export function BriefBuilder() {
                 className="w-full accent-brand-500"
               />
             </Field>
+            {canUseRef && (
+              <Field label={`Reference strength: ${brief.referenceStrength.toFixed(2)}`}>
+                <input
+                  type="range" min={0.1} max={1} step={0.05} value={brief.referenceStrength}
+                  onChange={(e) => patch({ referenceStrength: Number(e.target.value) })}
+                  className="w-full accent-brand-500"
+                />
+                <p className="mt-1 text-[10px] text-ink-400">
+                  Lower = stays closer to the source / character reference. Higher = follows the prompt more freely.
+                </p>
+              </Field>
+            )}
             <div className="md:col-span-2 flex items-end justify-end">
               <Toggle checked={animateOnGenerate} onChange={setAnimateOnGenerate} label="Auto-animate to video" />
             </div>

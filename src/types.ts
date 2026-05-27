@@ -21,6 +21,11 @@ export interface Brief {
   /** Free-text primary prompt — the main creative direction for the whole brief. Passed to the
    *  LLM as a high-priority instruction. Distinct from `notes`, which is supplementary. */
   mainPrompt: string;
+  /** Things to avoid (extra hands, low res, text artifacts, etc). Injected into both the LLM
+   *  ideation prompt and the image-gen request when the provider supports it. */
+  negativePrompt: string;
+  /** For img-to-img models: how strongly the prompt overrides the source (0..1). */
+  referenceStrength: number;
   seasons: string[];
   themes: string[];
   styles: string[];
@@ -84,6 +89,23 @@ export interface Generation {
   editNote?: string;
   /** Project the generation belongs to (null = not filed under a project). */
   projectId?: string;
+  /** Generated social-platform captions + hashtags. Lazy-populated when the user asks. */
+  socialCopy?: SocialCopy;
+}
+
+export type SocialPlatform = 'tiktok' | 'instagram' | 'facebook' | 'x';
+
+export interface SocialCopyPlatform {
+  captions: string[];
+  hashtags: string[];
+}
+
+export interface SocialCopy {
+  /** Hash of the inputs used to produce this copy; used as a cache key. */
+  hash: string;
+  /** When the LLM was called. */
+  generatedAt: number;
+  byPlatform: Partial<Record<SocialPlatform, SocialCopyPlatform>>;
 }
 
 /** A named project used to group Briefs + Generations (org-level container).
@@ -232,6 +254,18 @@ export interface ApiKeys {
   video?: RoleKey;
 }
 
+/** Org-level brand guardrails that every ideation prompt should honour. */
+export interface BrandGuard {
+  /** True to inject the guard into prompts; false to leave it inactive without losing the config. */
+  enabled: boolean;
+  /** Hex colours that should appear / dominate ('#FF5500', '#0066FF' …). */
+  colors: string[];
+  /** Phrases that MUST appear (e.g. 'PLAYTIKA logo bottom-right'). */
+  required: string[];
+  /** Phrases that MUST NOT appear (e.g. 'gambling chips', 'real currency'). */
+  banned: string[];
+}
+
 export interface Settings {
   apiKeys: ApiKeys;
   defaultTextModel: string;
@@ -239,4 +273,6 @@ export interface Settings {
   defaultVideoModel: string;
   /** True once the user has completed the initial setup wizard. */
   setupComplete: boolean;
+  /** Brand guardrails — injected into every ideation prompt when enabled. */
+  brandGuard: BrandGuard;
 }

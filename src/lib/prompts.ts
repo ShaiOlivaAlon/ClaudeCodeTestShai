@@ -1,4 +1,4 @@
-import type { Asset, Brief, Suggestion } from '../types';
+import type { Asset, Brief, BrandGuard, Suggestion } from '../types';
 
 export interface BriefForLLM {
   brief: Brief;
@@ -6,6 +6,16 @@ export interface BriefForLLM {
   items: Asset[];
   logos: Asset[];
   references: Asset[];
+  brandGuard?: BrandGuard;
+}
+
+function brandGuardLines(g: BrandGuard | undefined): string[] {
+  if (!g || !g.enabled) return [];
+  const parts: string[] = ['', 'BRAND GUARD (must be honoured across every idea):'];
+  if (g.colors.length)   parts.push(`- Brand palette to favour: ${g.colors.join(', ')}`);
+  if (g.required.length) parts.push(`- Required: ${g.required.map((s) => `"${s}"`).join('; ')}`);
+  if (g.banned.length)   parts.push(`- Forbidden (never include): ${g.banned.map((s) => `"${s}"`).join('; ')}`);
+  return parts.length > 2 ? parts : [];
 }
 
 export function buildSuggestionSystemPrompt(): string {
@@ -62,6 +72,8 @@ export function buildSuggestionUserPrompt(input: BriefForLLM): string {
   if (brief.titles.length) lines.push(`MUST-APPEAR title text on the image (verbatim, in quotes): ${brief.titles.map((t) => `"${t}"`).join(' / ')}`);
   if (brief.aspectRatios.length) lines.push(`Target aspect ratios: ${brief.aspectRatios.join(', ')}`);
   if (brief.notes.trim()) lines.push(`Additional notes: ${brief.notes.trim()}`);
+  if (brief.negativePrompt?.trim()) lines.push(`AVOID at all costs: ${brief.negativePrompt.trim()}`);
+  for (const l of brandGuardLines(input.brandGuard)) lines.push(l);
   lines.push('');
   lines.push('OUTPUT JSON SCHEMA');
   lines.push('{');
@@ -85,6 +97,36 @@ export function buildImagePromptEnhancer(): string {
     'You rewrite a single image-generation prompt to be production-ready for marketing creatives.',
     'Make it sharp, vivid, and unambiguous. Keep any quoted title text verbatim and instruct the model to render it cleanly.',
     'Output ONLY the rewritten prompt as a single paragraph. No commentary.',
+  ].join('\n');
+}
+
+export function buildSocialCopySystemPrompt(): string {
+  return [
+    'You are a senior social-media copywriter for a mobile gaming company.',
+    'Given the description of a single marketing image, write platform-tuned captions and hashtag sets.',
+    'Each caption should be punchy, native to its platform, and end with a clear CTA when natural.',
+    '',
+    'You MUST reply with a single JSON object matching the schema, no prose, no markdown fences.',
+  ].join('\n');
+}
+
+export function buildSocialCopyUserPrompt(opts: { title: string; prompt: string; description?: string }): string {
+  return [
+    `IMAGE TITLE: ${opts.title}`,
+    `IMAGE PROMPT: ${opts.prompt}`,
+    opts.description ? `EXTRA CONTEXT: ${opts.description}` : '',
+    '',
+    'For each of TikTok, Instagram, Facebook, X — write 3 caption variants (each ≤ 220 chars; TikTok ≤ 150; X ≤ 240) and 6-10 hashtags that fit that platform\'s tone.',
+    '',
+    'OUTPUT JSON SCHEMA',
+    '{',
+    '  "byPlatform": {',
+    '    "tiktok":    { "captions": ["…","…","…"], "hashtags": ["#…","#…"] },',
+    '    "instagram": { "captions": ["…","…","…"], "hashtags": ["#…","#…"] },',
+    '    "facebook":  { "captions": ["…","…","…"], "hashtags": ["#…","#…"] },',
+    '    "x":         { "captions": ["…","…","…"], "hashtags": ["#…","#…"] }',
+    '  }',
+    '}',
   ].join('\n');
 }
 
