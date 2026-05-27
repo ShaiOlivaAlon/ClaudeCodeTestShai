@@ -80,6 +80,7 @@ export type AppAction =
 export const defaultBrief: Brief = {
   selectedAssetIds: [],
   aspectRatios: ['1:1', '9:16', '16:9'],
+  mainPrompt: '',
   seasons: [],
   themes: [],
   styles: [],

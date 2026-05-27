@@ -18,6 +18,9 @@ export type AspectRatio =
 export interface Brief {
   selectedAssetIds: string[];
   aspectRatios: AspectRatio[];
+  /** Free-text primary prompt — the main creative direction for the whole brief. Passed to the
+   *  LLM as a high-priority instruction. Distinct from `notes`, which is supplementary. */
+  mainPrompt: string;
   seasons: string[];
   themes: string[];
   styles: string[];

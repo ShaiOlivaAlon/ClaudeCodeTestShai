@@ -192,13 +192,14 @@ export function BriefBuilder() {
   }
 
   // What's "enough" to brainstorm: an aspect ratio + at least one signal of intent.
-  // Selected assets count as a signal — many briefs are just "render these characters in this ratio".
+  // The free-text prompt or any selected assets count as a signal.
   function describeMissing(): string | null {
     const missing: string[] = [];
     if (brief.aspectRatios.length === 0) missing.push('at least one aspect ratio');
-    const anySignal = brief.themes.length + brief.styles.length + brief.features.length
+    const anySignal = (brief.mainPrompt?.trim() ? 1 : 0)
+      + brief.themes.length + brief.styles.length + brief.features.length
       + brief.seasons.length + brief.titles.length + brief.notes.length + includedAssets.length;
-    if (anySignal === 0) missing.push('a theme, style, season, title, asset, or some notes');
+    if (anySignal === 0) missing.push('a prompt, theme, style, asset, or some notes');
     return missing.length === 0 ? null : `Add ${missing.join(' and ')} before brainstorming.`;
   }
   const missingMessage = describeMissing();
@@ -237,6 +238,22 @@ export function BriefBuilder() {
 
       <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4">
         <PresetsBar />
+
+        <Card>
+          <SectionHeader
+            title="Prompt"
+            subtitle="Free-text creative direction — passed to the model as the highest-priority instruction."
+            action={brief.mainPrompt.trim().length > 0 ? (
+              <span className="text-[10px] text-ink-400">{brief.mainPrompt.trim().length} chars</span>
+            ) : null}
+          />
+          <Textarea
+            value={brief.mainPrompt}
+            onChange={(v) => patch({ mainPrompt: v })}
+            rows={3}
+            placeholder='e.g. "A series of magical Shavuot ad creatives for a Match-3 game — Shai, Alon, and baby Oliva in a sun-drenched meadow surrounded by glowing wheat and golden coins. Cozy 3D cartoon, warm light, sparkles. Title: KALUA ASHDOD."'
+          />
+        </Card>
 
         <Card>
           <SectionHeader title="Included from library" subtitle="Click thumbnails on the left to add or remove."

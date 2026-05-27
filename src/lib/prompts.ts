@@ -41,6 +41,11 @@ export function buildSuggestionUserPrompt(input: BriefForLLM): string {
   const count = Math.max(3, Math.min(24, brief.variationCount));
   lines.push(`Generate ${count} distinct concept ideas.`);
   lines.push('');
+  if (brief.mainPrompt?.trim()) {
+    lines.push('PRIMARY BRIEF (highest priority — every idea should honour this direction):');
+    lines.push(brief.mainPrompt.trim());
+    lines.push('');
+  }
   lines.push('CREATIVE BRIEF');
   if (characters.length) lines.push(`Characters: ${characters.map(describeAsset).join(' | ')}`);
   if (items.length) lines.push(`Items / props: ${items.map(describeAsset).join(' | ')}`);
