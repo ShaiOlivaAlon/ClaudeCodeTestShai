@@ -1,6 +1,7 @@
 import { NavLink, Route, Routes, Navigate, Link } from 'react-router-dom';
-import { Palette, Film, Settings as SettingsIcon, Home } from 'lucide-react';
+import { Brush, Palette, Film, Settings as SettingsIcon, Home } from 'lucide-react';
 import { ArtStoreProvider } from './store';
+import ArtistStudioTab from './tabs/ArtistStudioTab';
 import ReskinTab from './tabs/ReskinTab';
 import AnimateTab from './tabs/AnimateTab';
 import SettingsTab from './tabs/SettingsTab';
@@ -21,12 +22,13 @@ export default function ArtApp() {
               <div>
                 <h1 className="font-bold leading-tight">Art Pipeline</h1>
                 <div className="text-[10px] text-gray-500 leading-tight">
-                  Reskin · Animate
+                  Artist · Reskin · Animate
                 </div>
               </div>
             </div>
-            <nav className="ml-auto flex items-center gap-1">
-              <Tab to="reskin" icon={<Palette className="w-4 h-4" />} label="Reskin" />
+            <nav className="ml-auto flex items-center gap-1 flex-wrap">
+              <Tab to="artist" icon={<Brush className="w-4 h-4" />} label="Artist Studio" />
+              <Tab to="reskin" icon={<Palette className="w-4 h-4" />} label="Reskin Studio" />
               <Tab to="animate" icon={<Film className="w-4 h-4" />} label="Animate" />
               <Tab to="settings" icon={<SettingsIcon className="w-4 h-4" />} label="Settings" />
             </nav>
@@ -34,7 +36,8 @@ export default function ArtApp() {
         </header>
         <main className="flex-1">
           <Routes>
-            <Route index element={<Navigate to="reskin" replace />} />
+            <Route index element={<Navigate to="artist" replace />} />
+            <Route path="artist" element={<ArtistStudioTab />} />
             <Route path="reskin" element={<ReskinTab />} />
             <Route path="animate" element={<AnimateTab />} />
             <Route path="settings" element={<SettingsTab />} />

@@ -21,8 +21,9 @@ export default function Landing() {
             </div>
             <h2 className="font-bold text-lg">Art Pipeline</h2>
             <p className="text-sm text-gray-600 flex-1">
-              Drop a folder of game assets. Reskin every image with a new theme and
-              optional style references / LoRAs. Animate selected assets on a second tab.
+              <strong>Artist Studio</strong> generates fresh art from prompts, style refs
+              and LoRAs. <strong>Reskin Studio</strong> rethemes a whole folder of game
+              assets in batch. <strong>Animate</strong> turns stills into video clips.
             </p>
             <span className="text-primary-600 font-semibold inline-flex items-center gap-1 group-hover:gap-2 transition-all">
               Open <ArrowRight className="w-4 h-4" />

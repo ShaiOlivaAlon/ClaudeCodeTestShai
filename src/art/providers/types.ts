@@ -39,8 +39,25 @@ export interface VideoGenOutput {
   durationSec?: number;
 }
 
+export interface TextToImageInput {
+  prompt: string;
+  negativePrompt: string;
+  guidance: number;
+  steps: number;
+  seed: number | null;
+  model: string;
+  loras: LoRA[];
+  styleRefs: StyleRef[];
+  width: number;
+  height: number;
+}
+
 export interface ImageProvider {
   generate(input: ImageGenInput, keys: ApiKeys): Promise<ImageGenOutput>;
+}
+
+export interface TextToImageProvider {
+  generate(input: TextToImageInput, keys: ApiKeys): Promise<ImageGenOutput>;
 }
 
 export interface VideoProvider {

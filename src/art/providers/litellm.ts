@@ -1,5 +1,7 @@
 import {
   ImageProvider,
+  TextToImageProvider,
+  TextToImageInput,
   VideoProvider,
   ImageGenInput,
   ImageGenOutput,
@@ -63,6 +65,39 @@ export const litellmImage: ImageProvider = {
       width: input.width,
       height: input.height,
     };
+  },
+};
+
+export const litellmText2Image: TextToImageProvider = {
+  async generate(input: TextToImageInput, keys: ApiKeys): Promise<ImageGenOutput> {
+    const url = `${baseUrl(keys)}/v1/images/generations`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: authHeaders(keys),
+      body: JSON.stringify({
+        model: input.model,
+        prompt: input.prompt,
+        size: `${input.width}x${input.height}`,
+        n: 1,
+      }),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      throw new ProviderError(`LiteLLM text-to-image failed (${r.status}): ${text}`, 'litellm');
+    }
+    const json: { data?: { url?: string; b64_json?: string }[] } = await r.json();
+    const item = json.data?.[0];
+    let blob: Blob;
+    if (item?.b64_json) {
+      blob = await (await fetch(`data:image/png;base64,${item.b64_json}`)).blob();
+    } else if (item?.url) {
+      const imgRes = await fetch(item.url);
+      if (!imgRes.ok) throw new ProviderError('LiteLLM result download failed', 'litellm');
+      blob = await imgRes.blob();
+    } else {
+      throw new ProviderError('LiteLLM returned no image', 'litellm');
+    }
+    return { previewUrl: URL.createObjectURL(blob), width: input.width, height: input.height };
   },
 };
 

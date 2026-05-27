@@ -120,3 +120,31 @@ export interface AnimateSettings {
   durationSec: number;
   motionStrength: number;
 }
+
+export interface ArtistSettings {
+  prompt: string;
+  negativePrompt: string;
+  providerId: ProviderId;
+  model: string;
+  width: number;
+  height: number;
+  guidance: number;
+  steps: number;
+  seed: number | null;
+  batchSize: number;
+  loras: LoRA[];
+  styleRefs: StyleRef[];
+}
+
+export interface ArtistResult {
+  id: string;
+  prompt: string;
+  previewUrl: string;
+  width: number;
+  height: number;
+  status: 'pending' | 'running' | 'done' | 'error';
+  error?: string;
+  providerId: ProviderId;
+  model?: string;
+  createdAt: number;
+}

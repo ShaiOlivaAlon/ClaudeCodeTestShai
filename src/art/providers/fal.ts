@@ -1,5 +1,7 @@
 import {
   ImageProvider,
+  TextToImageProvider,
+  TextToImageInput,
   VideoProvider,
   ImageGenInput,
   ImageGenOutput,
@@ -106,6 +108,36 @@ export const falImage: ImageProvider = {
       body.image_prompt_strength = input.styleRefs[0].weight;
     }
 
+    const submission = await submit(input.model, body, keys);
+    const result = await poll<FalImageResult>(submission.status_url, submission.response_url, keys);
+    const imgUrl = result.images?.[0]?.url ?? result.image?.url;
+    if (!imgUrl) throw new ProviderError('FAL returned no image URL', 'fal');
+    const objectUrl = await fetchAsObjectUrl(imgUrl);
+    return {
+      previewUrl: objectUrl,
+      width: result.images?.[0]?.width ?? input.width,
+      height: result.images?.[0]?.height ?? input.height,
+    };
+  },
+};
+
+export const falText2Image: TextToImageProvider = {
+  async generate(input: TextToImageInput, keys: ApiKeys): Promise<ImageGenOutput> {
+    const body: Record<string, unknown> = {
+      prompt: input.prompt,
+      num_inference_steps: input.steps,
+      guidance_scale: input.guidance,
+      image_size: { width: input.width, height: input.height },
+    };
+    if (input.negativePrompt) body.negative_prompt = input.negativePrompt;
+    if (input.seed !== null) body.seed = input.seed;
+    if (input.loras.length && input.model.includes('lora')) {
+      body.loras = input.loras.map((l) => ({ path: l.url, scale: l.scale }));
+    }
+    if (input.styleRefs.length) {
+      body.image_prompt = input.styleRefs[0].dataUrl;
+      body.image_prompt_strength = input.styleRefs[0].weight;
+    }
     const submission = await submit(input.model, body, keys);
     const result = await poll<FalImageResult>(submission.status_url, submission.response_url, keys);
     const imgUrl = result.images?.[0]?.url ?? result.image?.url;

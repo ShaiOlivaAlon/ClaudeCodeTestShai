@@ -10,6 +10,8 @@ import {
   ApiKeys,
   Asset,
   AnimationResult,
+  ArtistResult,
+  ArtistSettings,
   ReskinResult,
   ReskinSettings,
   AnimateSettings,
@@ -44,6 +46,14 @@ interface ArtStore {
 
   animateSettings: AnimateSettings;
   setAnimateSettings: (s: AnimateSettings) => void;
+
+  artistResults: ArtistResult[];
+  upsertArtist: (r: ArtistResult) => void;
+  removeArtist: (id: string) => void;
+  clearArtistResults: () => void;
+
+  artistSettings: ArtistSettings;
+  setArtistSettings: (s: ArtistSettings) => void;
 }
 
 const ArtContext = createContext<ArtStore | null>(null);
@@ -70,6 +80,21 @@ const DEFAULT_ANIMATE: AnimateSettings = {
   motionStrength: 0.6,
 };
 
+const DEFAULT_ARTIST: ArtistSettings = {
+  prompt: '',
+  negativePrompt: '',
+  providerId: 'fal',
+  model: 'fal-ai/flux/dev',
+  width: 1024,
+  height: 1024,
+  guidance: 3.5,
+  steps: 28,
+  seed: null,
+  batchSize: 1,
+  loras: [],
+  styleRefs: [],
+};
+
 export function ArtStoreProvider({ children }: { children: React.ReactNode }) {
   const [keys, setKeysState] = useState<ApiKeys>(() => loadKeys());
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -78,6 +103,8 @@ export function ArtStoreProvider({ children }: { children: React.ReactNode }) {
   const [animations, setAnimations] = useState<AnimationResult[]>([]);
   const [reskinSettings, setReskinSettings] = useState<ReskinSettings>(DEFAULT_RESKIN);
   const [animateSettings, setAnimateSettings] = useState<AnimateSettings>(DEFAULT_ANIMATE);
+  const [artistSettings, setArtistSettings] = useState<ArtistSettings>(DEFAULT_ARTIST);
+  const [artistResults, setArtistResults] = useState<ArtistResult[]>([]);
 
   const setKeys = useCallback((k: ApiKeys) => {
     setKeysState(k);
@@ -162,12 +189,35 @@ export function ArtStoreProvider({ children }: { children: React.ReactNode }) {
     void deleteVideo(id);
   }, []);
 
+  const upsertArtist = useCallback((r: ArtistResult) => {
+    setArtistResults((prev) => {
+      const idx = prev.findIndex((x) => x.id === r.id);
+      if (idx === -1) return [...prev, r];
+      const next = [...prev];
+      next[idx] = r;
+      return next;
+    });
+  }, []);
+
+  const removeArtist = useCallback((id: string) => {
+    setArtistResults((prev) => prev.filter((r) => r.id !== id));
+    void deleteResult(id);
+  }, []);
+
+  const clearArtistResults = useCallback(() => {
+    setArtistResults((prev) => {
+      prev.forEach((r) => void deleteResult(r.id));
+      return [];
+    });
+  }, []);
+
   // Revoke object URLs on unmount to avoid blob leaks
   useEffect(() => {
     return () => {
       assets.forEach((a) => URL.revokeObjectURL(a.previewUrl));
       reskinResults.forEach((r) => URL.revokeObjectURL(r.previewUrl));
       animations.forEach((a) => URL.revokeObjectURL(a.videoUrl));
+      artistResults.forEach((r) => URL.revokeObjectURL(r.previewUrl));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -195,6 +245,12 @@ export function ArtStoreProvider({ children }: { children: React.ReactNode }) {
       setReskinSettings,
       animateSettings,
       setAnimateSettings,
+      artistResults,
+      upsertArtist,
+      removeArtist,
+      clearArtistResults,
+      artistSettings,
+      setArtistSettings,
     }),
     [
       keys,
@@ -216,6 +272,11 @@ export function ArtStoreProvider({ children }: { children: React.ReactNode }) {
       removeAnimation,
       reskinSettings,
       animateSettings,
+      artistResults,
+      upsertArtist,
+      removeArtist,
+      clearArtistResults,
+      artistSettings,
     ]
   );
 

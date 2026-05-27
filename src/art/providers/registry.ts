@@ -78,6 +78,29 @@ export function videoProviders(): ProviderMeta[] {
 }
 
 /** Suggested model lists per provider (curated, not exhaustive). */
+export const TEXT2IMAGE_MODELS: Record<ProviderId, string[]> = {
+  fal: [
+    'fal-ai/flux/dev',
+    'fal-ai/flux-pro/v1.1-ultra',
+    'fal-ai/flux-lora',
+    'fal-ai/recraft-v3',
+    'fal-ai/ideogram/v2',
+    'fal-ai/stable-diffusion-v35-large',
+  ],
+  google: [
+    'imagen-3.0-generate-002',
+    'imagen-3.0-fast-generate-001',
+    'gemini-2.5-flash-image-preview',
+  ],
+  runway: [],
+  litellm: ['dall-e-3', 'gpt-image-1', 'fal-ai/flux/dev', 'imagen-3.0-generate-002'],
+  openai: ['gpt-image-1', 'dall-e-3'],
+  azure: ['dall-e-3'],
+  claude: [],
+  aws: ['amazon.titan-image-generator-v2', 'stability.stable-diffusion-xl-v1'],
+  gcp: ['imagen-3.0-generate-001', 'imagen-3.0-fast-generate-001'],
+};
+
 export const IMAGE_MODELS: Record<ProviderId, string[]> = {
   fal: [
     'fal-ai/flux/dev/image-to-image',
