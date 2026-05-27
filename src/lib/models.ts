@@ -20,11 +20,12 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
   openai: 'OpenAI',
   'azure-openai': 'Azure OpenAI',
   litellm: 'LiteLLM',
+  runway: 'Runway',
 };
 
 export const TEXT_PROVIDERS: Provider[] = ['google', 'anthropic', 'openai', 'azure-openai', 'litellm'];
 export const IMAGE_PROVIDERS: Provider[] = ['google', 'fal', 'openai', 'azure-openai', 'litellm'];
-export const VIDEO_PROVIDERS: Provider[] = ['google', 'fal'];
+export const VIDEO_PROVIDERS: Provider[] = ['google', 'fal', 'runway'];
 
 export const TEXT_MODELS: ModelDef[] = [
   { id: 'gemini-3-pro-preview',  name: 'Gemini 3 Pro',          provider: 'google',    description: 'Newest Google flagship — strongest reasoning.' },
@@ -54,6 +55,7 @@ export const IMAGE_MODELS: ModelDef[] = [
   { id: 'fal-ai/flux/dev',                 name: 'FLUX Dev',           provider: 'fal',    description: 'Fast iterations.' },
   { id: 'fal-ai/flux-pulid',               name: 'FLUX + Character',   provider: 'fal',    description: 'Keeps character identity from a reference.', supportsReference: true },
   { id: 'fal-ai/flux/dev/image-to-image',  name: 'FLUX Img-to-Img',    provider: 'fal',    description: 'Re-styles a reference frame.', supportsReference: true },
+  { id: 'fal-ai/flux-lora/image-to-image', name: 'FLUX LoRA Img-to-Img', provider: 'fal',  description: 'Img-to-img with one or more LoRAs applied.', supportsReference: true },
   { id: 'fal-ai/flux-pro/v1/fill',         name: 'FLUX Pro Fill (inpaint)', provider: 'fal', description: 'Region-based edit — paint a mask, describe the change.', supportsReference: true, supportsMask: true },
   { id: 'fal-ai/ideogram/v2',              name: 'Ideogram v2',        provider: 'fal',    description: 'Best for embedded title text.', supportsText: true },
   { id: 'fal-ai/recraft-v3',               name: 'Recraft v3',         provider: 'fal',    description: 'Vector & illustration styles.' },
@@ -73,6 +75,8 @@ export const VIDEO_MODELS: ModelDef[] = [
   { id: 'fal-ai/runway-gen3/turbo/image-to-video',          name: 'Runway Gen-3 Turbo',  provider: 'fal',    description: 'Cinematic camera moves.' },
   { id: 'fal-ai/luma-dream-machine',                        name: 'Luma Dream Machine',  provider: 'fal',    description: 'Dreamy, painterly motion.' },
   { id: 'fal-ai/veo3/fast/image-to-video',                  name: 'Veo 3 Fast (via fal)',provider: 'fal',    description: 'Veo 3 routed through fal.ai.' },
+  { id: 'gen4_turbo',                                       name: 'Runway Gen-4 Turbo',  provider: 'runway', description: 'Runway image-to-video, fast tier.' },
+  { id: 'gen3a_turbo',                                      name: 'Runway Gen-3a Turbo', provider: 'runway', description: 'Runway image-to-video, classic tier.' },
 ];
 
 export function modelsForProvider(list: ModelDef[], provider: Provider): ModelDef[] {

@@ -124,6 +124,62 @@ export interface GameLayer {
   isTransparent?: boolean;
 }
 
+// --- Reskin: bulk image-to-image with optional LoRAs ----------------------
+
+export type ReskinLoraKind = 'file' | 'huggingface';
+
+export interface ReskinLora {
+  id: string;
+  kind: ReskinLoraKind;
+  /** For kind='file': original file name. */
+  fileName?: string;
+  /** For kind='file': data URL of the .safetensors. Uploaded to fal at run time. */
+  fileDataUrl?: string;
+  /** For kind='huggingface': repo id, e.g. "alvdansen/flux-koda". */
+  huggingfaceId?: string;
+  /** 0..2 (1 is default). */
+  scale: number;
+}
+
+export type ReskinAssetStatus = 'idle' | 'queued' | 'generating' | 'done' | 'error';
+
+/** A single source asset and its current reskin result. */
+export interface ReskinAsset {
+  id: string;
+  fileName: string;
+  width: number;
+  height: number;
+  sourceDataUrl: string;
+  resultUrl?: string;
+  status: ReskinAssetStatus;
+  error?: string;
+  /** Marked for the export ZIP / batch-animate pass. */
+  selected: boolean;
+  /** When animate has been kicked off on this asset's result. */
+  videoUrl?: string;
+  videoStatus?: GenerationStatus;
+  videoError?: string;
+}
+
+export interface ReskinProject {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  /** What to re-render each asset into ("70s sci-fi pulp", "gold-foiled trading card"...). */
+  prompt: string;
+  /** 0..1, img-to-img strength (lower = closer to source, higher = closer to prompt). */
+  strength: number;
+  /** Image model id (must support img-to-img). */
+  imageModel: string;
+  /** Asset ids from the global library used as style references. */
+  styleReferenceAssetIds: string[];
+  loras: ReskinLora[];
+  assets: ReskinAsset[];
+  /** Video model to use for the Animate sub-tab. */
+  videoModel?: string;
+}
+
 /** A game-feature project: a background image + an ordered sequence of sculpture states. */
 export interface GameProject {
   id: string;
@@ -139,7 +195,7 @@ export interface GameProject {
   sculptureLayers: GameLayer[];
 }
 
-export type Provider = 'google' | 'anthropic' | 'fal' | 'openai' | 'azure-openai' | 'litellm';
+export type Provider = 'google' | 'anthropic' | 'fal' | 'openai' | 'azure-openai' | 'litellm' | 'runway';
 
 export type Role = 'text' | 'image' | 'video';
 

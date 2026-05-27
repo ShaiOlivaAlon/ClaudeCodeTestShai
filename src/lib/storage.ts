@@ -1,13 +1,14 @@
-import type { ApiKeys, Asset, BriefPreset, GameProject, Generation, Settings } from '../types';
+import type { ApiKeys, Asset, BriefPreset, GameProject, Generation, ReskinProject, Settings } from '../types';
 
 const DB_NAME = 'playtika-artist-studio';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_ASSETS = 'assets';
 const STORE_GENERATIONS = 'generations';
 const STORE_PRESETS = 'briefPresets';
 const STORE_IMAGE_CACHE = 'imageCache';
 const STORE_VIDEO_CACHE = 'videoCache';
 const STORE_GAME_PROJECTS = 'gameProjects';
+const STORE_RESKIN_PROJECTS = 'reskinProjects';
 const SETTINGS_KEY = 'pas.settings.v1';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -35,6 +36,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_GAME_PROJECTS)) {
         db.createObjectStore(STORE_GAME_PROJECTS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_RESKIN_PROJECTS)) {
+        db.createObjectStore(STORE_RESKIN_PROJECTS, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -284,6 +288,38 @@ export async function putGameProject(p: GameProject): Promise<void> {
 
 export async function deleteGameProject(id: string): Promise<void> {
   await tx<void>(STORE_GAME_PROJECTS, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+// --- Reskin projects -------------------------------------------------------
+
+export async function listReskinProjects(): Promise<ReskinProject[]> {
+  return tx<ReskinProject[]>(STORE_RESKIN_PROJECTS, 'readonly', (s) => {
+    return new Promise<ReskinProject[]>((resolve, reject) => {
+      const req = s.getAll();
+      req.onsuccess = () => resolve((req.result as ReskinProject[]).sort((a, b) => b.updatedAt - a.updatedAt));
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function putReskinProject(p: ReskinProject): Promise<void> {
+  await tx<void>(STORE_RESKIN_PROJECTS, 'readwrite', (s) => {
+    return new Promise<void>((resolve, reject) => {
+      const req = s.put(p);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function deleteReskinProject(id: string): Promise<void> {
+  await tx<void>(STORE_RESKIN_PROJECTS, 'readwrite', (s) => {
     return new Promise<void>((resolve, reject) => {
       const req = s.delete(id);
       req.onsuccess = () => resolve();

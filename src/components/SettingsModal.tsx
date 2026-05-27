@@ -32,6 +32,7 @@ function placeholderFor(p: Provider): string {
     case 'openai':       return 'sk-…';
     case 'azure-openai': return 'Azure API key';
     case 'litellm':      return 'sk-… (LiteLLM virtual key)';
+    case 'runway':       return 'key_…';
   }
 }
 

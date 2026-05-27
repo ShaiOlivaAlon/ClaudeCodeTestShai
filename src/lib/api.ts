@@ -529,6 +529,71 @@ async function veoGenerate(opts: {
   throw new Error('Veo job timed out.');
 }
 
+// ----- Runway --------------------------------------------------------------
+
+const RUNWAY_BASE = 'https://api.dev.runwayml.com';
+const RUNWAY_VERSION = '2024-11-06';
+
+function runwayRatio(r: AspectRatio): '1280:720' | '720:1280' | '1104:832' | '832:1104' | '960:960' {
+  if (r === '9:16' || r === '4:5' || r === '3:4' || r === '2:3') return '720:1280';
+  if (r === '16:9' || r === '5:4' || r === '4:3' || r === '3:2') return '1280:720';
+  return '960:960';
+}
+
+async function runwayGenerate(opts: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  imageUrl: string;
+  aspectRatio: AspectRatio;
+  onProgress?: (status: string) => void;
+}): Promise<{ url: string }> {
+  // Runway needs the source frame as a public URL or data URL. Data URLs are accepted by their API.
+  const promptImage = opts.imageUrl.startsWith('data:') ? opts.imageUrl : opts.imageUrl;
+  const submit = await fetch(`${RUNWAY_BASE}/v1/image_to_video`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${opts.apiKey}`,
+      'X-Runway-Version': RUNWAY_VERSION,
+    },
+    body: JSON.stringify({
+      model: opts.model,
+      promptImage,
+      promptText: opts.prompt.slice(0, 1000),
+      ratio: runwayRatio(opts.aspectRatio),
+      duration: 5,
+    }),
+  });
+  if (!submit.ok) {
+    const text = await submit.text();
+    throw new Error(`Runway submit error ${submit.status}: ${text.slice(0, 400)}`);
+  }
+  const submitData = await submit.json();
+  const taskId: string | undefined = submitData?.id;
+  if (!taskId) throw new Error('Runway did not return a task id.');
+
+  const start = Date.now();
+  while (Date.now() - start < 10 * 60 * 1000) {
+    const poll = await fetch(`${RUNWAY_BASE}/v1/tasks/${encodeURIComponent(taskId)}`, {
+      headers: { Authorization: `Bearer ${opts.apiKey}`, 'X-Runway-Version': RUNWAY_VERSION },
+    });
+    if (!poll.ok) throw new Error(`Runway poll error ${poll.status}`);
+    const pd = await poll.json();
+    opts.onProgress?.(String(pd?.status ?? 'RUNNING'));
+    if (pd.status === 'SUCCEEDED') {
+      const url: string | undefined = pd?.output?.[0] ?? pd?.output?.url;
+      if (!url) throw new Error('Runway task succeeded but no output URL returned.');
+      return { url };
+    }
+    if (pd.status === 'FAILED' || pd.status === 'CANCELLED') {
+      throw new Error(`Runway task ${pd.status}: ${pd?.failure ?? 'unknown reason'}`);
+    }
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  throw new Error('Runway task timed out after 10 minutes.');
+}
+
 // ----- fal.ai --------------------------------------------------------------
 
 const FAL_QUEUE = 'https://queue.fal.run';
@@ -587,27 +652,53 @@ export async function falUpload(dataUrl: string, apiKey: string, filename = 'upl
   return file_url as string;
 }
 
+/** A LoRA descriptor as accepted by fal.ai's flux-lora endpoints. */
+export interface FalLoraSpec {
+  /** Public URL (fal storage, HuggingFace, etc.) OR a HuggingFace repo id. */
+  path: string;
+  /** 0..2, default 1. */
+  scale?: number;
+}
+
 async function falGenerateImage(opts: {
   apiKey: string;
   model: string;
   prompt: string;
   aspectRatio: AspectRatio;
   referenceUrls?: string[];
+  /** Override image_size with explicit pixel dims (used when the caller wants to preserve a
+   *  source asset's original dimensions, e.g. for Reskin). */
+  width?: number;
+  height?: number;
+  /** Img-to-img strength (lower = closer to source). Only honoured by img-to-img endpoints. */
+  strength?: number;
+  /** LoRAs for flux-lora/* endpoints. */
+  loras?: FalLoraSpec[];
   onProgress?: (status: string) => void;
 }): Promise<{ url: string }> {
-  const { model, apiKey, prompt, aspectRatio, referenceUrls = [], onProgress } = opts;
-  const imgSize = falImageSize(aspectRatio);
+  const { model, apiKey, prompt, aspectRatio, referenceUrls = [], width, height, strength, loras, onProgress } = opts;
+  const imgSize = (width && height) ? { width, height } : falImageSize(aspectRatio);
 
   const input: Record<string, unknown> = { prompt };
 
-  if (model.includes('flux-pulid') && referenceUrls[0]) {
+  if (model.includes('flux-lora/image-to-image') && referenceUrls[0]) {
+    input.image_url = referenceUrls[0];
+    input.strength = strength ?? 0.75;
+    input.image_size = imgSize;
+    input.num_inference_steps = 32;
+    if (loras?.length) input.loras = loras.map((l) => ({ path: l.path, scale: l.scale ?? 1 }));
+  } else if (model.includes('flux-lora') && !model.includes('image-to-image')) {
+    input.image_size = imgSize;
+    input.num_inference_steps = 32;
+    if (loras?.length) input.loras = loras.map((l) => ({ path: l.path, scale: l.scale ?? 1 }));
+  } else if (model.includes('flux-pulid') && referenceUrls[0]) {
     input.reference_image_url = referenceUrls[0];
     input.image_size = imgSize;
     input.num_inference_steps = 20;
     input.guidance_scale = 4;
   } else if (model.includes('flux/dev/image-to-image') && referenceUrls[0]) {
     input.image_url = referenceUrls[0];
-    input.strength = 0.75;
+    input.strength = strength ?? 0.75;
     input.image_size = imgSize;
   } else if (model.includes('ideogram')) {
     input.aspect_ratio = aspectRatio.includes(':') ? aspectRatio.replace(':', '_') : '1_1';
@@ -872,6 +963,16 @@ async function dispatchVideoGen(opts: VideoGenInput, role: RoleKey): Promise<{ u
       onProgress: opts.onProgress,
     });
   }
+  if (role.provider === 'runway') {
+    return runwayGenerate({
+      apiKey: role.key,
+      model: opts.model,
+      prompt: opts.prompt,
+      imageUrl: opts.imageUrl,
+      aspectRatio: opts.aspectRatio,
+      onProgress: opts.onProgress,
+    });
+  }
 
   // fal video needs a public URL — if the image is a data URL, upload it first.
   let publicImageUrl = opts.imageUrl;
@@ -917,6 +1018,77 @@ export async function removeBackground(opts: RembgInput): Promise<{ url: string 
   const url: string | undefined = out?.image?.url ?? out?.images?.[0]?.url ?? out?.url;
   if (!url) throw new Error('Background removal returned no image.');
   return { url };
+}
+
+// ----- Reskin (img-to-img per asset) --------------------------------------
+
+export interface ReskinCallInput {
+  apiKeys: ApiKeys;
+  /** Image model id — must be img-to-img-capable. flux/dev/image-to-image or
+   *  flux-lora/image-to-image recommended. Other providers fall back to plain generate. */
+  model: string;
+  prompt: string;
+  /** Source asset to reskin. Will be uploaded to fal storage when needed. */
+  sourceDataUrl: string;
+  width: number;
+  height: number;
+  strength: number;
+  /** Optional style references (data URLs); first one is used as the secondary reference for
+   *  models that accept one. */
+  styleReferenceDataUrls?: string[];
+  loras?: { kind: 'file' | 'huggingface'; fileDataUrl?: string; huggingfaceId?: string; scale: number }[];
+  onProgress?: (status: string) => void;
+}
+
+/** Run a single asset through img-to-img with the configured prompt + optional LoRAs.
+ *  Result preserves the source's original dimensions. */
+export async function reskinAsset(opts: ReskinCallInput): Promise<{ url: string }> {
+  const role = getRole(opts.apiKeys, 'image');
+
+  // Reskin needs img-to-img with dimension control — currently only fal endpoints offer that.
+  if (role.provider !== 'fal') {
+    throw new Error('Reskin currently requires fal.ai as the Image provider. Pick a fal img-to-img model (e.g. FLUX LoRA Img-to-Img).');
+  }
+
+  // Upload the source asset.
+  const sourceUrl = await falUpload(opts.sourceDataUrl, role.key, 'reskin-source.png');
+
+  // Resolve LoRAs to fal-acceptable specs (path = public URL or HF id).
+  let loras: FalLoraSpec[] | undefined;
+  if (opts.loras?.length) {
+    loras = [];
+    for (const l of opts.loras) {
+      if (l.kind === 'file' && l.fileDataUrl) {
+        const url = await falUpload(l.fileDataUrl, role.key, 'lora.safetensors');
+        loras.push({ path: url, scale: l.scale });
+      } else if (l.kind === 'huggingface' && l.huggingfaceId) {
+        loras.push({ path: l.huggingfaceId, scale: l.scale });
+      }
+    }
+  }
+
+  // Best-effort referenceUrl when the model is character-aware.
+  const refs: string[] = [sourceUrl];
+  if (opts.styleReferenceDataUrls?.length) {
+    for (const d of opts.styleReferenceDataUrls.slice(0, 1)) {
+      const u = await falUpload(d, role.key, 'reskin-style-ref.png');
+      refs.push(u);
+    }
+  }
+
+  const result = await falGenerateImage({
+    apiKey: role.key,
+    model: opts.model,
+    prompt: opts.prompt,
+    aspectRatio: '1:1', // overridden by explicit width/height below
+    referenceUrls: refs,
+    width: opts.width,
+    height: opts.height,
+    strength: opts.strength,
+    loras,
+    onProgress: opts.onProgress,
+  });
+  return { url: result.url };
 }
 
 // ----- Inpainting (region edit) -------------------------------------------
@@ -1039,6 +1211,14 @@ export async function pingProvider(provider: Provider, apiKey: string, extra?: {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       return res.ok;
+    }
+    if (provider === 'runway') {
+      // GET /v1/tasks/_ping is not standard — list a bogus task and accept 4xx (auth ok).
+      const res = await fetch(`${RUNWAY_BASE}/v1/tasks/_ping`, {
+        headers: { Authorization: `Bearer ${apiKey}`, 'X-Runway-Version': RUNWAY_VERSION },
+      });
+      // 401 = bad key; 404/400 with a valid key both mean auth worked.
+      return res.status !== 401 && res.status !== 403;
     }
     return false;
   } catch {
